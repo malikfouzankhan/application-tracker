@@ -1,0 +1,87 @@
+import type { remoteTypeValues } from "@/db/enums";
+import type { Preferences } from "@/lib/preferences";
+
+// Cheap, deterministic filtering in code before Claude sees anything (claude.md section 6.7).
+// Failed jobs are kept with their reason, for stats and the /jobs page.
+
+export type PrefilterInput = {
+  title: string;
+  companyName: string;
+  locationRaw: string | null;
+  remoteType: (typeof remoteTypeValues)[number];
+  expMin: number | null;
+  isDreamCompany: boolean;
+};
+
+export type PrefilterResult = { passed: boolean; reason: string | null };
+
+const NON_INDIA_REGIONS =
+  /\b(us|usa|u\.s\.?|united states|canada|uk|u\.k\.|united kingdom|europe|eu|emea|latam|americas|north america|germany|france|netherlands|spain|poland|ireland|australia|new zealand|singapore|japan|brazil|mexico|israel|uae|dubai|philippines|vietnam|pakistan)\b/i;
+const INDIA_FRIENDLY = /\b(india|indian|ist|asia|apac|anywhere|worldwide|global)\b/i;
+const REMOTE_WORD = /\b(remote|work from home|wfh)\b/i;
+
+/** Lowercase, hyphens/underscores/slashes to spaces, single spaces. */
+function normalizeTerm(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[-_/|,()[\]]+/g, " ")
+    .replace(/\./g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function containsTerm(haystack: string, term: string): boolean {
+  const t = normalizeTerm(term);
+  if (!t) return false;
+  return ` ${haystack} `.includes(` ${t} `);
+}
+
+function checkTitle(title: string, prefs: Preferences): string | null {
+  const t = normalizeTerm(title);
+  if (!prefs.include_internships && /\bintern(ship)?s?\b/.test(t)) return "title_internship";
+  if (prefs.title_exclusions.some((ex) => containsTerm(t, ex))) return "title_excluded";
+  if (!prefs.role_keywords.some((kw) => containsTerm(t, kw))) return "title_no_role_match";
+  return null;
+}
+
+function checkLocation(
+  input: PrefilterInput,
+  prefs: Preferences,
+): { ok: boolean; reason: string | null } {
+  const loc = (input.locationRaw ?? "").trim();
+  const isRemote = input.remoteType === "remote" || REMOTE_WORD.test(loc);
+
+  if (!loc && input.remoteType === "unknown") return { ok: true, reason: "location_unknown" };
+
+  const normalized = normalizeTerm(loc);
+  if (prefs.locations.some((l) => containsTerm(normalized, l))) return { ok: true, reason: null };
+  if (/^india$/i.test(loc)) return { ok: true, reason: null };
+
+  if (isRemote && prefs.allow_remote_india) {
+    if (INDIA_FRIENDLY.test(loc)) return { ok: true, reason: null };
+    if (NON_INDIA_REGIONS.test(loc)) return { ok: false, reason: "remote_not_india" };
+    return { ok: true, reason: "remote_region_unclear" };
+  }
+
+  return { ok: false, reason: "location_mismatch" };
+}
+
+export function prefilterJob(input: PrefilterInput, prefs: Preferences): PrefilterResult {
+  const company = input.companyName.trim().toLowerCase();
+  if (prefs.excluded_companies.some((c) => c.trim().toLowerCase() === company)) {
+    return { passed: false, reason: "excluded_company" };
+  }
+
+  const titleReason = checkTitle(input.title, prefs);
+  if (titleReason) return { passed: false, reason: titleReason };
+
+  const location = checkLocation(input, prefs);
+  if (!location.ok) return { passed: false, reason: location.reason };
+
+  if (input.expMin !== null && input.expMin >= prefs.drop_exp_min && !input.isDreamCompany) {
+    return { passed: false, reason: "exp_too_high" };
+  }
+
+  // Passing jobs keep a note when something was unknown.
+  return { passed: true, reason: location.reason ?? (input.expMin === null ? "exp_unknown" : null) };
+}

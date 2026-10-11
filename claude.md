@@ -210,6 +210,7 @@ applications
   next_action text null
   next_action_at timestamptz null
   notes text null
+  cover_note text null                       -- <= 2,500, from save_application_pack
   archived boolean not null default false
   INDEX (status, applied_at desc)
   INDEX (updated_at desc)
@@ -243,6 +244,8 @@ outreach
   status outreach_status not null default 'drafted'
   sent_at timestamptz null
   follow_up_at timestamptz null
+  note text null                             -- <= 500, from update_outreach_status
+  INDEX (status, follow_up_at)
 ```
 
 ### 5.4 Resume and profile
@@ -314,6 +317,7 @@ audit_log
   ok boolean not null
   error_code text null
   INDEX (tool, created_at desc)
+  INDEX (tool, client_id, created_at desc)   -- rate limiting
 
 mcp_clients
   client_id text not null unique             -- CIMD: a URL; DCR: opaque id
@@ -530,7 +534,7 @@ Design: clean, dense, fast. Tailwind, server components by default, client compo
 
 ### `/today` (home)
 - Today's digest (`digests.summary_md`, rendered as sanitized markdown).
-- Shortlist cards (applications in `ready` created today), ordered by fit_score. Each card: company, title, tier badge, fit score, reasons, justify note, scam flags, links to job, resume PDF, screening answers with **copy buttons**, outreach draft with copy button.
+- Shortlist cards (applications in `ready` created today), ordered by fit_score. Each card: company, title, location, tier badge, fit score, reasons, justify note, scam flags, links to job, resume PDF, screening answers with **copy buttons**, outreach draft with copy button.
 - Actions per card: Approve resume variant, Mark applied (sets channel + applied_at), Dismiss, 👍/👎 with optional reason.
 - Profile nudge box (from digest).
 - Follow-ups due.
@@ -541,7 +545,7 @@ One place to see every application across all statuses.
 - **Filters** (all combinable, persisted in URL search params so views are bookmarkable):
   status (multi), tier, archetype, job source, channel, company (search), date range (created / applied), has outreach (y/n), outreach status, scam-flagged, dream company, include archived.
 - Free-text search over company and title.
-- Columns: company, title, status badge, tier, fit score, applied date, last update, next action, outreach status, source.
+- Columns: company, title, location (with remote/hybrid badge), status badge, tier, fit score, applied date, last update, next action, outreach status, source.
 - Row click opens `/applications/[id]`.
 - **Kanban toggle**: same filters, columns by status, drag to change status (user override rules apply).
 - Bulk actions (user only): archive, mark ghosted.
@@ -643,7 +647,13 @@ Run ingestion, then the daily Claude routine (appendix A) manually, then the mor
 - Services return typed results and throw typed `AppError` (`code`, `message`). MCP layer maps codes to tool errors.
 - Dates stored UTC; displayed in Asia/Kolkata.
 - Small focused files. One MCP tool per file.
-- Tests with Vitest for pure logic (parsers, sanitizer, state machine, signing, prefilter).
+- Tests with Vitest for pure logic (parsers, sanitizer, state machine, signing, prefilter). Keep testable logic
+  in modules that do not import `server-only`, `@/lib/env` or `@/db/client`.
+- `server-only` throws outside Next.js. Standalone scripts that import services run with
+  `node --conditions=react-server --env-file=.env.local --import tsx <script>`.
+- Services take a `ServiceContext` (`actor`, `clientId`, `tool`). Each mutating service call runs in one
+  transaction and writes exactly one `audit_log` row (`tool` = MCP tool name when called via MCP, so rate
+  limits count it). Dashboard-only services call `requireUser(ctx)`.
 - Never use the em dash character in UI copy or generated text.
 
 ---

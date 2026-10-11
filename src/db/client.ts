@@ -15,3 +15,8 @@ const client = globalForDb.pgClient ?? createClient();
 if (process.env.NODE_ENV !== "production") globalForDb.pgClient = client;
 
 export const db = drizzle(client, { schema });
+
+export type Db = typeof db;
+export type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+/** Services accept either, so they can run inside a caller's transaction. */
+export type DbOrTx = Db | Tx;

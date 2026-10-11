@@ -173,12 +173,14 @@ export const applications = pgTable(
     nextAction: text("next_action"),
     nextActionAt: tz("next_action_at"),
     notes: text("notes"),
+    coverNote: text("cover_note"), // from save_application_pack
     archived: boolean("archived").notNull().default(false),
     ...timestamps,
   },
   (t) => [
     index("applications_status_applied_at_idx").on(t.status, t.appliedAt.desc()),
     index("applications_updated_at_idx").on(t.updatedAt.desc()),
+    check("applications_cover_note_length", sql`char_length(${t.coverNote}) <= 2500`),
   ],
 ).enableRLS();
 
@@ -247,11 +249,14 @@ export const outreach = pgTable(
     status: outreachStatus("status").notNull().default("drafted"),
     sentAt: tz("sent_at"),
     followUpAt: tz("follow_up_at"),
+    note: text("note"), // from update_outreach_status
     ...timestamps,
   },
   (t) => [
     index("outreach_job_id_idx").on(t.jobId),
+    index("outreach_status_follow_up_idx").on(t.status, t.followUpAt),
     check("outreach_message_length", sql`char_length(${t.message}) <= 1500`),
+    check("outreach_note_length", sql`char_length(${t.note}) <= 500`),
   ],
 ).enableRLS();
 
@@ -369,7 +374,11 @@ export const auditLog = pgTable(
     errorCode: text("error_code"),
     ...timestamps,
   },
-  (t) => [index("audit_log_tool_created_at_idx").on(t.tool, t.createdAt.desc())],
+  (t) => [
+    index("audit_log_tool_created_at_idx").on(t.tool, t.createdAt.desc()),
+    // Rate limiting counts rows per (tool, client) in the last minute.
+    index("audit_log_tool_client_created_at_idx").on(t.tool, t.clientId, t.createdAt.desc()),
+  ],
 ).enableRLS();
 
 export const mcpClients = pgTable("mcp_clients", {
