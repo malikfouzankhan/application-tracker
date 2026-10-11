@@ -38,6 +38,11 @@ export async function recordAudit(
   });
 }
 
+/** Audit row outside any transaction: read tools and failed calls (MCP guard). */
+export async function recordCallAudit(ctx: ServiceContext, entry: AuditEntry): Promise<void> {
+  await recordAudit(db, ctx, entry);
+}
+
 /** Calls of `tool` by `clientId` in the rate-limit window, counted from audit_log. */
 export async function countRecentCalls(tool: string, clientId: string | null): Promise<number> {
   const [row] = await db
