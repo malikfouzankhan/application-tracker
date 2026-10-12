@@ -513,44 +513,57 @@ Everything else requires a Clerk session AND owner check.
 
 ## 10. Security requirements checklist
 
-Every item must be implemented and verified before the first real run.
+Every item must be implemented and verified before the first real run. Status after M7 (2026-10-12):
+`[x]` done and verified in code/tests; `[ ]` needs production configuration (README "Production setup checklist").
 
 **Access**
 - [ ] Clerk access mode Invite-only, passwords disabled, email-code sign-in only (owner Gmail has 2FA).
-- [ ] Owner check on every page, server action, route handler and MCP tool.
-- [ ] Proxy deny-by-default with the explicit public allowlist above.
-- [ ] Kill switch (`app_settings.mcp_enabled`) in Settings, checked first in guard.
-- [ ] MCP clients list in Settings with revoke.
+      Production Clerk instance setting (README step 2).
+- [x] Owner check on every page (`requireOwnerPage`), server action (`runAction`), route handler (`/r`, export,
+      `/api/mcp`) and MCP tool (guard step 3).
+- [x] Proxy deny-by-default with the explicit public allowlist above (`src/proxy.ts`, explicit path regexes).
+- [x] Kill switch (`app_settings.mcp_enabled`) in Settings, checked first in guard.
+- [x] MCP clients list in Settings with revoke.
 
 **Data**
-- [ ] Data API disabled in Supabase project settings. As defense in depth, RLS enabled on all tables with no policies (migration). If the Data API is ever enabled, verify with the publishable key that every table returns zero rows.
-- [ ] Publishable key unused. Secret key (`sb_secret_...`) only in server code, only for Storage. No legacy anon/service_role keys.
-- [ ] Storage bucket `resumes` private. Signed URLs only.
-- [ ] Sensitive answer-bank values masked in MCP output by default.
-- [ ] No PII in logs or `audit_log.diff`. No `console.log` of request bodies.
-- [ ] `env.ts` validates all env vars with zod at boot; `.env*` gitignored; GitHub secret scanning on.
+- [x] Data API disabled in Supabase project settings (confirmed by MFK). RLS enabled on all tables with no policies.
+- [x] Publishable key unused. Secret key (`sb_secret_...`) only in `src/lib/storage.ts` (server-only), only for Storage.
+- [x] Storage bucket `resumes` private (created private; refuses to run if public). Files are streamed through `/r`
+      behind session or 24h HMAC signature; storage URLs never leave the server.
+- [x] Sensitive answer-bank values masked in MCP output by default.
+- [x] No PII in logs or `audit_log.diff` (logs carry error names/codes only; diffs carry ids, counts, field names).
+- [ ] `env.ts` validates all env vars with zod at boot [x]; `.env*` gitignored [x]; GitHub secret scanning and push
+      protection on (repo setting, README step 4).
 
 **AI/MCP**
-- [ ] External text sanitized at ingest (section 6.5) and wrapped in `external_content` in tool output.
-- [ ] No delete tools, no outbound tools.
-- [ ] zod `.strict()` schemas with max lengths and max array sizes on every tool.
-- [ ] Rate limits per tool per client.
-- [ ] Idempotent upserts for retryable writes.
-- [ ] State machine enforced for MCP status changes.
-- [ ] Tool descriptions and server instructions are static strings.
+- [x] External text sanitized at ingest and wrapped in `external_content` in tool output.
+- [x] No delete tools, no outbound tools.
+- [x] zod `.strict()` schemas with max lengths and max array/record sizes on every tool.
+- [x] Rate limits per tool per client.
+- [x] Idempotent upserts for retryable writes.
+- [x] State machine enforced for MCP status changes.
+- [x] Tool descriptions and server instructions are static strings.
 
 **Web**
-- [ ] Never render external HTML. Job descriptions render as plain text (`whitespace-pre-wrap`). If HTML rendering is ever added, DOMPurify first.
-- [ ] Security headers in `next.config` (`headers()`): `Content-Security-Policy` (allow Clerk domains as its docs require, `frame-ancestors 'none'`), `X-Frame-Options: DENY`, `Strict-Transport-Security`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy` minimal.
-- [ ] Server actions rely on Next.js origin checks; custom mutating route handlers verify `Origin` header.
-- [ ] No open redirects: redirect targets must be relative paths from an allowlist.
-- [ ] Ingestion SSRF guard (host allowlist, token regex).
-- [ ] Lockfile committed, Dependabot enabled, `pnpm audit` in CI, MCP SDK and mcp-handler versions pinned.
+- [x] Never render external HTML. Job descriptions render as plain text; the Claude-written digest is rendered with
+      react-markdown with raw HTML and images disabled.
+- [x] Security headers in `next.config.ts` via `src/lib/security-headers.ts`: CSP (Clerk Frontend API derived from the
+      publishable key, `frame-ancestors 'none'`, `object-src 'none'`), `X-Frame-Options: DENY`, HSTS, `nosniff`,
+      `Referrer-Policy`, minimal `Permissions-Policy`, COOP; `X-Powered-By` removed. No nonces: Partial Prerendering
+      is incompatible with nonce CSP, so inline scripts are allowed. Verified in Chromium: 0 CSP violations.
+- [x] Server actions rely on Next.js origin checks; there are no custom mutating cookie-auth route handlers
+      (`/api/mcp` uses bearer tokens; `/r` and export are GET).
+- [x] No open redirects: the only `redirect()` is a fixed `/today`; Clerk validates its own redirect URLs.
+- [x] Ingestion SSRF guard (host allowlist, https only, no redirects, token regex, size and time caps).
+- [x] Lockfile committed, Dependabot (`.github/dependabot.yml`), `pnpm audit --prod` gate in CI (`ci.yml`), MCP SDK,
+      mcp-handler and @clerk/mcp-tools pinned exactly. Accepted: `braces` (dev-only via eslint, no patched release).
 
 **Ops**
-- [ ] Weekly `pg_dump` via `backup.yml` to private storage (encrypted artifact or private bucket), keep last 8.
-- [ ] Ingestion failures fail the workflow (email alert).
-- [ ] README section: secret rotation steps (Clerk, Supabase, PDF signing secret, GitHub secrets).
+- [ ] Weekly `pg_dump` via `backup.yml`, AES-256 encrypted artifact, 56-day retention (last 8). Needs the
+      `BACKUP_PASSPHRASE` secret and one manual run (README step 4).
+- [x] Ingestion failures fail the workflow (email alert).
+- [x] README section: secret rotation steps (Clerk, Supabase, PDF signing secret, GitHub secrets), OAuth grant
+      revocation, backups and restore.
 
 ---
 

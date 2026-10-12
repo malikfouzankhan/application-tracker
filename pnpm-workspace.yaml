@@ -2,3 +2,8 @@ allowBuilds:
   esbuild: true
   sharp: false
   unrs-resolver: false
+
+# Patched version of a vulnerable transitive dev dependency (pnpm audit): drizzle-kit's legacy loader.
+# Not overridden: braces (dev-only via eslint; no patched release exists; patterns are ours, not user input).
+overrides:
+  "@esbuild-kit/core-utils>esbuild": ">=0.25.0"

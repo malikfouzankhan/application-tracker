@@ -29,8 +29,14 @@ export const createResumeVariantTool = defineTool({
       summary: generatedText(600),
       claim_ids: z.array(uuid).min(1).max(30).describe("Ordered as they should appear"),
       skills_order: z.array(z.string().trim().min(1).max(60)).max(40),
-      rephrases: z.record(uuid, generatedText(300)).optional(),
-      rephrase_justifications: z.record(uuid, generatedText(300)).optional(),
+      rephrases: z
+        .record(uuid, generatedText(300))
+        .refine((r) => Object.keys(r).length <= 30, "At most 30 rephrases")
+        .optional(),
+      rephrase_justifications: z
+        .record(uuid, generatedText(300))
+        .refine((r) => Object.keys(r).length <= 30, "At most 30 justifications")
+        .optional(),
     })
     .strict(),
   handler: async (input, ctx) => {

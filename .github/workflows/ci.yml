@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main, development]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Placeholder values with valid formats: the build validates env at import time but never
+    # connects to anything. Real secrets live only in Vercel and in the workflows that need them.
+    env:
+      APP_URL: https://example.invalid
+      DATABASE_URL: postgresql://ci:ci@localhost:6543/ci
+      DIRECT_DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_Y2ktcGxhY2Vob2xkZXIuY2xlcmsuYWNjb3VudHMuZGV2JA==
+      CLERK_SECRET_KEY: sk_test_ci_placeholder
+      OWNER_CLERK_USER_ID: user_ciplaceholder
+      SUPABASE_URL: https://ci-placeholder.supabase.co
+      SUPABASE_SECRET_KEY: sb_secret_ci_placeholder
+      PDF_SIGNING_SECRET: ci-placeholder-secret-at-least-32-characters
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Audit production dependencies
+        run: pnpm audit --prod --audit-level=moderate
+
+      - name: Audit all dependencies (report only)
+        run: pnpm audit --audit-level=high
+        continue-on-error: true
+
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm build

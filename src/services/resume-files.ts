@@ -21,7 +21,8 @@ export async function approveAndCacheVariant(variantId: string, ctx: ServiceCont
     await setVariantStoragePath(variantId, path, ctx);
     return { cached: true };
   } catch (error) {
-    console.error(`[resume] caching variant failed: ${error instanceof Error ? error.message : "unknown"}`);
+    // Error type only: query errors embed parameter values.
+    console.error(`[resume] caching variant failed: ${error instanceof Error ? error.name : "unknown"}`);
     return { cached: false };
   }
 }
@@ -39,7 +40,7 @@ export async function getVariantPdf(variantId: string): Promise<{ pdf: Buffer; f
       const [pdf, filename] = await Promise.all([downloadPdf(variant.storagePath), variantFilename(variantId)]);
       return { pdf, filename, status: variant.status };
     } catch (error) {
-      console.error(`[resume] cached PDF unavailable, rendering: ${error instanceof Error ? error.message : "unknown"}`);
+      console.error(`[resume] cached PDF unavailable, rendering: ${error instanceof Error ? error.name : "unknown"}`);
     }
   }
   const { pdf, filename } = await renderVariantPdf(variantId);
