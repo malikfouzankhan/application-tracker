@@ -37,9 +37,15 @@ export function latestHiringThreadId(json: unknown): string | null {
 }
 
 const LOCATION_HINT =
-  /\b(remote|on-?site|hybrid|in-?office|wfh|anywhere|worldwide|global|india|bangalore|bengaluru|hyderabad|mumbai|pune|chennai|delhi|gurgaon|gurugram|noida|kochi|apac|asia|emea|europe|eu|uk|us|usa|canada|london|berlin|paris|amsterdam|nyc|new york|sf|san francisco|bay area|seattle|austin|boston|toronto|singapore|tokyo|sydney)\b/i;
+  /\b(remote|on-?site|hybrid|in-?office|in[- ]person|wfh|anywhere|worldwide|global|india|bangalore|bengaluru|hyderabad|mumbai|pune|chennai|delhi|gurgaon|gurugram|noida|kochi|apac|asia|emea|europe|eu|uk|us|usa|canada|london|berlin|paris|amsterdam|nyc|new york|sf|san francisco|bay area|seattle|austin|boston|toronto|singapore|tokyo|sydney)\b/i;
 
-/** Splits the header line into company, location and the full line (used as the title). */
+// "Kirkland, WA", "Long Beach, CA": a US state code after a comma.
+const US_STATE = /,\s*(?:A[KLRZ]|C[AOT]|D[CE]|FL|GA|HI|I[ADLN]|K[SY]|LA|M[ADEINOST]|N[CDEHJMVY]|O[HKR]|PA|RI|S[CD]|T[NX]|UT|V[AT]|W[AIVY])\b/;
+const ROLE_HINT = /\b(engineers?|developers?|sde|swe|programmers?|architects?|full[- ]?stack|back[- ]?end|front[- ]?end)\b/i;
+
+const isLocation = (s: string) => LOCATION_HINT.test(s) || US_STATE.test(s);
+
+/** Splits the header line into company, role title and location. */
 export function parseHnHeader(header: string): { companyName: string; title: string; locationRaw: string | null } {
   // Some posters put the whole first paragraph on the header line; keep titles short.
   const line = sanitizeLine(header, 200);
@@ -55,14 +61,21 @@ export function parseHnHeader(header: string): { companyName: string; title: str
   // "PrairieLearn (Remote US)": the location hides in the company segment's parentheses.
   for (const paren of first.match(/\(([^)]*)\)/g) ?? []) {
     const inner = paren.slice(1, -1).trim();
-    if (LOCATION_HINT.test(inner)) locations.push(inner);
+    if (isLocation(inner)) locations.push(inner);
   }
-  // Other short segments that mention a place, kept whole: "Remote (India)", "Bengaluru, India".
-  for (const segment of segments.slice(1)) {
-    if (segment.length <= 80 && LOCATION_HINT.test(segment)) locations.push(segment);
+  // Other segments that mention a place, kept whole: "Remote (India)", "In Person", "Kirkland, WA".
+  const rest = segments.slice(1);
+  for (const segment of rest) {
+    if (segment.length <= 200 && isLocation(segment) && !ROLE_HINT.test(segment)) locations.push(segment);
   }
 
-  return { companyName: companyName.slice(0, 200), title: line, locationRaw: locations.length ? [...new Set(locations)].join("; ") : null };
+  // The role is the first segment naming one ("Backend Software Engineer"); else the whole line.
+  const role = rest.find((s) => s.length <= 120 && ROLE_HINT.test(s));
+  return {
+    companyName: companyName.slice(0, 200),
+    title: role ?? line,
+    locationRaw: locations.length ? [...new Set(locations)].join("; ") : null,
+  };
 }
 
 export function parseHnThread(json: unknown): NormalizedJob[] {

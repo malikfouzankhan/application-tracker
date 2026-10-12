@@ -29,7 +29,7 @@ async function main() {
       for (const e of s.errors) console.log(`  ! ${e.target}: ${e.message}`);
     }
     console.log(
-      `\n${result.companiesPolled} companies polled, ${result.prunedToLowFreq} moved to low_freq, ${((Date.now() - started) / 1000).toFixed(1)}s`,
+      `\n${result.companiesPolled} companies polled, ${result.purgedJobs} irrelevant jobs purged, ${result.prunedToLowFreq} moved to low_freq, ${((Date.now() - started) / 1000).toFixed(1)}s`,
     );
     process.exitCode = result.hadErrors ? 1 : 0;
   } finally {

@@ -9,11 +9,19 @@ export const submitAssessmentsTool = defineTool({
   kind: "write",
   title: "Submit assessments",
   description:
-    "Record your judgment for candidate jobs, all in one call. Tiers: fit (meets the bar), " +
-    "justify (small experience gap that can be argued, explain how in justify_note), stretch " +
-    "(bigger gap, worth a shot), skip. Archetype picks the base resume (fullstack, backend, " +
-    "frontend, ai). Mark recommended: true for jobs worth preparing a pack for today. Upserts on " +
-    "job_id, so resubmitting replaces the previous assessment; new jobs move to stage 'assessed'.",
+    "Record your judgment for candidate jobs, all in one call. Use MFK's definitions strictly " +
+    "(experience bands are in get_briefing preferences.exp_bands): " +
+    "fit = a software role within MFK's skill set, and the experience asked matches " +
+    "MFK's (up to fit_max years). " +
+    "justify = a software role within the skill set, but the experience asked is not exactly " +
+    "MFK's (up to justify_max years); say how to argue the gap in justify_note. " +
+    "stretch = a software role that partially matches the skill set, and the experience asked " +
+    "is a little more than MFK's, about 2 years more (up to stretch_max years). " +
+    "skip = everything else: non-software or other engineering fields, stacks MFK does not " +
+    "use, or far more experience. Skipped jobs are hidden from MFK entirely, so use skip " +
+    "rather than a low score for irrelevant jobs. Archetype picks the base resume (fullstack, " +
+    "backend, frontend, ai). Mark recommended: true for jobs worth preparing a pack for today. " +
+    "Upserts on job_id; new jobs move to stage 'assessed'.",
   idempotent: true,
   input: z
     .object({

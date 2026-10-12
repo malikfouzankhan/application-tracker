@@ -106,13 +106,3 @@ export async function getStats(range: StatsRange) {
 export async function getRecentIngestionRuns(limit = 30) {
   return db.select().from(ingestionRuns).orderBy(desc(ingestionRuns.startedAt)).limit(limit);
 }
-
-/** /jobs: why the prefilter dropped jobs, for tuning preferences. */
-export async function getPrefilterReasonCounts(since: Date) {
-  return db
-    .select({ reason: jobs.prefilterReason, passed: jobs.prefilterPassed, n: count() })
-    .from(jobs)
-    .where(gte(jobs.firstSeenAt, since))
-    .groupBy(jobs.prefilterReason, jobs.prefilterPassed)
-    .orderBy(desc(count()));
-}

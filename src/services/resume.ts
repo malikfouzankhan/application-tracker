@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { type DbOrTx, db } from "@/db/client";
 import type { archetypeValues, claimKindValues } from "@/db/enums";
 import { baseResumes, claims, jobs, resumeVariants } from "@/db/schema";
@@ -353,4 +353,26 @@ export async function getVariantForRender(variantId: string) {
   });
 
   return { variant: row.variant, job: row.job, items };
+}
+
+/** /library: variants Claude drafted that wait for MFK's review. */
+export async function listDraftVariants() {
+  return db
+    .select({
+      id: resumeVariants.id,
+      createdAt: resumeVariants.createdAt,
+      jobId: resumeVariants.jobId,
+      title: jobs.title,
+      companyName: jobs.companyName,
+      rephrases: resumeVariants.rephrases,
+      claimIds: resumeVariants.claimIds,
+    })
+    .from(resumeVariants)
+    .innerJoin(jobs, eq(jobs.id, resumeVariants.jobId))
+    .where(eq(resumeVariants.status, "draft"))
+    .orderBy(desc(resumeVariants.createdAt));
+}
+
+export async function listBaseResumes() {
+  return db.select().from(baseResumes).orderBy(asc(baseResumes.archetype));
 }

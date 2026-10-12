@@ -1,5 +1,5 @@
 import "server-only";
-import { and, desc, eq, gte, inArray, isNotNull, isNull, not, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, ilike, inArray, isNotNull, isNull, not, or, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { applications, companies, jobAssessments, jobs } from "@/db/schema";
 import { parseExperience } from "@/ingest/exp-parse";
@@ -9,6 +9,7 @@ import { decodeHtmlEntities, sanitizeExternalText, sanitizeLine } from "@/ingest
 import { detectScamFlags } from "@/ingest/scam";
 import { extractBoardRefs } from "@/ingest/snowball";
 import { AppError } from "@/lib/errors";
+import { type JobFilters, likePattern } from "@/lib/filters";
 import { urlHash } from "@/lib/hash";
 import { type JobStage, isValidJobStageTransition } from "@/lib/state-machine";
 import { recordAudit } from "./audit";
@@ -18,6 +19,7 @@ import { getPreferences } from "./preferences";
 
 export type IngestItemResult =
   | { url: string; status: "new" | "duplicate"; jobId: string; prefilterPassed: boolean }
+  | { url: string; status: "dropped"; reason: string }
   | { url: string; status: "invalid"; error: string };
 
 export type IngestResult = {
@@ -26,8 +28,9 @@ export type IngestResult = {
   duplicates: number;
   invalid: number;
   passedPrefilter: number;
-  /** Previously rejected jobs that pass under the current preferences. */
-  requalified: number;
+  /** Irrelevant jobs discarded by the prefilter. They are never stored. */
+  dropped: number;
+  dropReasons: Record<string, number>;
   snowballedCompanies: number;
   items: IngestItemResult[];
 };
@@ -36,9 +39,8 @@ export type IngestResult = {
  * The shared ingestion pipeline (claude.md section 6): sanitize, hash, parse experience,
  * prefilter, scam flags, snowball, then insert. Idempotent: rows are keyed on url_hash. Known URLs
  * are looked up in bulk first, so a daily re-poll of a large board costs one query per 500 jobs.
- * Rejected jobs are stored without their description and do not snowball. When a rejected job is
- * seen again it is re-checked against the current preferences, and requalifies (getting its
- * description) if it now passes. Used by the daily ingestion and by import_jobs.
+ * Jobs that fail the prefilter are discarded, never stored (MFK only wants relevant jobs), so they
+ * are simply re-evaluated if they show up again. Used by the daily ingestion and by import_jobs.
  */
 export async function ingestNormalized(
   input: NormalizedJob[],
@@ -51,7 +53,8 @@ export async function ingestNormalized(
     duplicates: 0,
     invalid: 0,
     passedPrefilter: 0,
-    requalified: 0,
+    dropped: 0,
+    dropReasons: {},
     snowballedCompanies: 0,
     items: [],
   };
@@ -82,21 +85,10 @@ export async function ingestNormalized(
 
   return db.transaction(async (tx) => {
     const hashes = prepared.map((p) => p.hash);
-    const existingColumns = {
-      id: jobs.id,
-      urlHash: jobs.urlHash,
-      prefilterPassed: jobs.prefilterPassed,
-      title: jobs.title,
-      companyName: jobs.companyName,
-      companyId: jobs.companyId,
-      locationRaw: jobs.locationRaw,
-      remoteType: jobs.remoteType,
-      expMin: jobs.expMin,
-    };
-    const existing = new Map<string, { [K in keyof typeof existingColumns]: (typeof jobs.$inferSelect)[K] }>();
+    const existing = new Map<string, { id: string; prefilterPassed: boolean }>();
     for (let i = 0; i < hashes.length; i += 500) {
       const rows = await tx
-        .select(existingColumns)
+        .select({ id: jobs.id, urlHash: jobs.urlHash, prefilterPassed: jobs.prefilterPassed })
         .from(jobs)
         .where(inArray(jobs.urlHash, hashes.slice(i, i + 500)));
       for (const row of rows) existing.set(row.urlHash, row);
@@ -126,30 +118,8 @@ export async function ingestNormalized(
     for (const { job, hash } of prepared) {
       const known = existing.get(hash);
       if (known) {
-        let passed = known.prefilterPassed;
-        if (!passed) {
-          // Rejected before: re-check with today's preferences (they may have been loosened).
-          const company = known.companyId ? await companyWithId(known.companyId) : null;
-          const recheck = prefilterJob(
-            { ...known, isDreamCompany: company?.isDream ?? false },
-            preferences,
-          );
-          if (recheck.passed) {
-            await tx
-              .update(jobs)
-              .set({
-                prefilterPassed: true,
-                prefilterReason: recheck.reason,
-                descriptionText: sanitizeExternalText(job.description).text,
-              })
-              .where(eq(jobs.id, known.id));
-            await snowball(job);
-            result.requalified++;
-            passed = true;
-          }
-        }
         result.duplicates++;
-        result.items.push({ url: job.url, status: "duplicate", jobId: known.id, prefilterPassed: passed });
+        result.items.push({ url: job.url, status: "duplicate", jobId: known.id, prefilterPassed: known.prefilterPassed });
         continue;
       }
 
@@ -172,7 +142,14 @@ export async function ingestNormalized(
         },
         preferences,
       );
-      if (prefilter.passed) await snowball(job);
+      if (!prefilter.passed) {
+        const reason = prefilter.reason ?? "rejected";
+        result.dropped++;
+        result.dropReasons[reason] = (result.dropReasons[reason] ?? 0) + 1;
+        result.items.push({ url: job.url, status: "dropped", reason });
+        continue;
+      }
+      await snowball(job);
 
       const [inserted] = await tx
         .insert(jobs)
@@ -187,8 +164,7 @@ export async function ingestNormalized(
           country: job.country ? sanitizeLine(job.country, 80) : null,
           expMin: experience?.min ?? null,
           expMax: experience?.max ?? null,
-          // Rejected jobs keep only what stats and /jobs need (claude.md section 6.7).
-          descriptionText: prefilter.passed ? description : "",
+          descriptionText: description,
           source: job.source,
           sourceRef: job.sourceRef ?? null,
           postedAt: job.postedAt ?? null,
@@ -223,7 +199,7 @@ export async function ingestNormalized(
         duplicates: result.duplicates,
         invalid: result.invalid,
         passedPrefilter: result.passedPrefilter,
-        requalified: result.requalified,
+        dropped: result.dropped,
         snowballedCompanies: result.snowballedCompanies,
       },
     });
@@ -390,5 +366,98 @@ export async function syncBoardClosures(
       });
     }
     return { closed: closed.length, archived: toArchive.length, reopened: reopened.length };
+  });
+}
+
+/** Stages shown on /jobs. Dismissed, archived and Claude-skipped jobs are hidden entirely. */
+export const VISIBLE_JOB_STAGES = ["new", "assessed", "shortlisted"] as const;
+
+/** /jobs: relevant jobs only (fit, justify, stretch, or not assessed yet). */
+export async function searchJobs(f: JobFilters) {
+  const PAGE = 50;
+  const where = and(
+    eq(jobs.prefilterPassed, true),
+    inArray(jobs.stage, f.stage ? [f.stage] : [...VISIBLE_JOB_STAGES]),
+    sql`(${jobAssessments.tier} is null or ${jobAssessments.tier} <> 'skip')`,
+    f.tier ? eq(jobAssessments.tier, f.tier) : undefined,
+    f.source ? eq(jobs.source, f.source) : undefined,
+    f.q ? or(ilike(jobs.companyName, likePattern(f.q)), ilike(jobs.title, likePattern(f.q))) : undefined,
+    f.since ? gte(jobs.firstSeenAt, sql`${f.since}::timestamp at time zone 'Asia/Kolkata'`) : undefined,
+  );
+  const [rows, [{ n }]] = await Promise.all([
+    db
+      .select({
+        id: jobs.id,
+        url: jobs.url,
+        title: jobs.title,
+        companyName: jobs.companyName,
+        locationRaw: jobs.locationRaw,
+        remoteType: jobs.remoteType,
+        source: jobs.source,
+        stage: jobs.stage,
+        expMin: jobs.expMin,
+        expMax: jobs.expMax,
+        prefilterPassed: jobs.prefilterPassed,
+        prefilterReason: jobs.prefilterReason,
+        scamFlags: jobs.scamFlags,
+        firstSeenAt: jobs.firstSeenAt,
+        closedAt: jobs.closedAt,
+        tier: jobAssessments.tier,
+        fitScore: jobAssessments.fitScore,
+      })
+      .from(jobs)
+      .leftJoin(jobAssessments, eq(jobAssessments.jobId, jobs.id))
+      .where(where)
+      .orderBy(desc(jobs.firstSeenAt), asc(jobs.companyName))
+      .limit(PAGE)
+      .offset((f.page - 1) * PAGE),
+    db.select({ n: count() }).from(jobs).leftJoin(jobAssessments, eq(jobAssessments.jobId, jobs.id)).where(where),
+  ]);
+  return { rows, total: n, pageSize: PAGE };
+}
+
+/**
+ * Keeps the jobs table relevant (MFK only wants fit/justify/stretch material): deletes every
+ * stored job that fails the prefilter under the current preferences. Only untouched jobs are
+ * deleted (stage new, or archived by the system when its board closed it; no assessment,
+ * application, variant, outreach or feedback), so nothing MFK or Claude worked on is lost.
+ * Dismissed jobs are kept (hidden) so they never come back as new. Runs after each ingestion,
+ * so tightening preferences takes effect.
+ */
+export async function purgeIrrelevantJobs(ctx: ServiceContext): Promise<{ checked: number; deleted: number }> {
+  const { preferences } = await getPreferences();
+  const untouched = and(
+    inArray(jobs.stage, ["new", "archived"]),
+    sql`not exists (select 1 from ${jobAssessments} a where a.job_id = ${jobs.id})`,
+    sql`not exists (select 1 from ${applications} a where a.job_id = ${jobs.id})`,
+    sql`not exists (select 1 from resume_variants v where v.job_id = ${jobs.id})`,
+    sql`not exists (select 1 from outreach o where o.job_id = ${jobs.id})`,
+    sql`not exists (select 1 from feedback f where f.job_id = ${jobs.id})`,
+  );
+
+  return db.transaction(async (tx) => {
+    const rows = await tx
+      .select({
+        id: jobs.id,
+        prefilterPassed: jobs.prefilterPassed,
+        title: jobs.title,
+        companyName: jobs.companyName,
+        locationRaw: jobs.locationRaw,
+        remoteType: jobs.remoteType,
+        expMin: jobs.expMin,
+        isDreamCompany: sql<boolean>`coalesce(${companies.isDream}, false)`,
+      })
+      .from(jobs)
+      .leftJoin(companies, eq(companies.id, jobs.companyId))
+      .where(untouched);
+
+    const irrelevant = rows.filter((r) => !r.prefilterPassed || !prefilterJob(r, preferences).passed).map((r) => r.id);
+    for (let i = 0; i < irrelevant.length; i += 1000) {
+      await tx.delete(jobs).where(and(inArray(jobs.id, irrelevant.slice(i, i + 1000)), untouched));
+    }
+    if (irrelevant.length) {
+      await recordAudit(tx, ctx, { action: "jobs.purgeIrrelevant", targetType: "job", diff: { checked: rows.length, deleted: irrelevant.length } });
+    }
+    return { checked: rows.length, deleted: irrelevant.length };
   });
 }

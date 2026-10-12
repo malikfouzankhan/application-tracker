@@ -1,10 +1,12 @@
 import "server-only";
-import { and, asc, count, desc, eq, gte, inArray, isNotNull, lte, not, sql } from "drizzle-orm";
+import { type SQL, and, asc, count, desc, eq, gte, ilike, inArray, isNotNull, lt, lte, not, or, sql } from "drizzle-orm";
 import { type Tx, db } from "@/db/client";
 import type { appChannelValues } from "@/db/enums";
 import {
   applicationEvents,
   applications,
+  companies,
+  contacts,
   jobAssessments,
   jobs,
   outreach,
@@ -12,6 +14,7 @@ import {
   screeningAnswers,
 } from "@/db/schema";
 import { AppError } from "@/lib/errors";
+import { type ApplicationFilters, likePattern } from "@/lib/filters";
 import {
   APP_TRANSITIONS,
   type AppStatus,
@@ -354,7 +357,12 @@ export async function getApplication(applicationId: string) {
       .from(applicationEvents)
       .where(eq(applicationEvents.applicationId, applicationId))
       .orderBy(asc(applicationEvents.createdAt)),
-    db.select().from(outreach).where(eq(outreach.jobId, row.application.jobId)).orderBy(desc(outreach.createdAt)),
+    db
+      .select({ outreach, contactName: contacts.name, contactRole: contacts.role, contactUrl: contacts.publicProfileUrl })
+      .from(outreach)
+      .leftJoin(contacts, eq(contacts.id, outreach.contactId))
+      .where(eq(outreach.jobId, row.application.jobId))
+      .orderBy(desc(outreach.createdAt)),
   ]);
 
   return { ...row, answers, events, outreach: outreachRows };
@@ -422,4 +430,142 @@ export async function getTodayShortlist(sinceUtc: Date) {
       ),
     )
     .orderBy(sql`${jobAssessments.fitScore} desc nulls last`);
+}
+
+// ---------------------------------------------------------------- Dashboard views
+
+const PAGE_SIZE = 50;
+
+/** Latest outreach status for the application's job, as a correlated subquery. */
+const outreachStatusSql = sql<string | null>`(
+  select o.status from ${outreach} o where o.job_id = ${applications.jobId} order by o.created_at desc limit 1
+)`;
+
+function applicationWhere(f: ApplicationFilters) {
+  const istDay = (d: string, end = false) => sql`(${d}::date ${end ? sql`+ 1` : sql``})::timestamp at time zone 'Asia/Kolkata'`;
+  return and(
+    f.archived ? undefined : eq(applications.archived, false),
+    f.status.length ? inArray(applications.status, f.status) : undefined,
+    f.tier ? eq(jobAssessments.tier, f.tier) : undefined,
+    f.archetype ? eq(jobAssessments.archetype, f.archetype) : undefined,
+    f.source ? eq(jobs.source, f.source) : undefined,
+    f.channel ? eq(applications.channel, f.channel) : undefined,
+    f.company ? ilike(jobs.companyName, likePattern(f.company)) : undefined,
+    f.q ? or(ilike(jobs.companyName, likePattern(f.q)), ilike(jobs.title, likePattern(f.q))) : undefined,
+    f.createdFrom ? gte(applications.createdAt, istDay(f.createdFrom)) : undefined,
+    f.createdTo ? lt(applications.createdAt, istDay(f.createdTo, true)) : undefined,
+    f.appliedFrom ? gte(applications.appliedAt, istDay(f.appliedFrom)) : undefined,
+    f.appliedTo ? lt(applications.appliedAt, istDay(f.appliedTo, true)) : undefined,
+    f.hasOutreach === "yes" ? sql`exists (select 1 from ${outreach} o where o.job_id = ${applications.jobId})` : undefined,
+    f.hasOutreach === "no" ? sql`not exists (select 1 from ${outreach} o where o.job_id = ${applications.jobId})` : undefined,
+    f.outreachStatus ? sql`${outreachStatusSql} = ${f.outreachStatus}` : undefined,
+    f.scam ? sql`cardinality(${jobs.scamFlags}) > 0` : undefined,
+    f.dream ? eq(companies.isDream, true) : undefined,
+  );
+}
+
+const ORDER: Record<ApplicationFilters["sort"], SQL[]> = {
+  activity: [sql`coalesce(${applications.appliedAt}, ${applications.createdAt}) desc`],
+  applied: [sql`${applications.appliedAt} desc nulls last`],
+  created: [sql`${applications.createdAt} desc`],
+  fit: [sql`${jobAssessments.fitScore} desc nulls last`],
+  company: [sql`lower(${jobs.companyName}) asc`, sql`${applications.createdAt} desc`],
+};
+
+/** /applications table, kanban and CSV export: one query, every filter server-side. */
+export async function searchApplications(f: ApplicationFilters, options: { all?: boolean } = {}) {
+  const where = applicationWhere(f);
+  const base = () =>
+    db
+      .select({
+        id: applications.id,
+        jobId: applications.jobId,
+        companyName: jobs.companyName,
+        title: jobs.title,
+        locationRaw: jobs.locationRaw,
+        remoteType: jobs.remoteType,
+        source: jobs.source,
+        url: jobs.url,
+        scamFlags: jobs.scamFlags,
+        isDream: sql<boolean>`coalesce(${companies.isDream}, false)`,
+        status: applications.status,
+        channel: applications.channel,
+        appliedAt: applications.appliedAt,
+        createdAt: applications.createdAt,
+        updatedAt: applications.updatedAt,
+        nextAction: applications.nextAction,
+        nextActionAt: applications.nextActionAt,
+        archived: applications.archived,
+        tier: jobAssessments.tier,
+        archetype: jobAssessments.archetype,
+        fitScore: jobAssessments.fitScore,
+        outreachStatus: outreachStatusSql,
+      })
+      .from(applications)
+      .innerJoin(jobs, eq(jobs.id, applications.jobId))
+      .leftJoin(companies, eq(companies.id, jobs.companyId))
+      .leftJoin(jobAssessments, eq(jobAssessments.jobId, applications.jobId))
+      .where(where)
+      .orderBy(...ORDER[f.sort]);
+
+  const limit = options.all ? 5000 : PAGE_SIZE;
+  const offset = options.all ? 0 : (f.page - 1) * PAGE_SIZE;
+  const [rows, [{ n }]] = await Promise.all([
+    base().limit(limit).offset(offset),
+    db
+      .select({ n: count() })
+      .from(applications)
+      .innerJoin(jobs, eq(jobs.id, applications.jobId))
+      .leftJoin(companies, eq(companies.id, jobs.companyId))
+      .leftJoin(jobAssessments, eq(jobAssessments.jobId, applications.jobId))
+      .where(where),
+  ]);
+  return { rows, total: n, pageSize: PAGE_SIZE };
+}
+
+/** /today: every ready pack (not just today's), best fit first, with what is needed to apply. */
+export async function getPackCards() {
+  const apps = await db
+    .select({
+      application: applications,
+      job: {
+        id: jobs.id,
+        url: jobs.url,
+        title: jobs.title,
+        companyName: jobs.companyName,
+        locationRaw: jobs.locationRaw,
+        remoteType: jobs.remoteType,
+        scamFlags: jobs.scamFlags,
+        expMin: jobs.expMin,
+        expMax: jobs.expMax,
+      },
+      assessment: jobAssessments,
+      variant: { id: resumeVariants.id, status: resumeVariants.status },
+      isNew: sql<boolean>`${applications.createdAt} > now() - interval '1 day'`,
+    })
+    .from(applications)
+    .innerJoin(jobs, eq(jobs.id, applications.jobId))
+    .leftJoin(jobAssessments, eq(jobAssessments.jobId, applications.jobId))
+    .leftJoin(resumeVariants, eq(resumeVariants.id, applications.resumeVariantId))
+    .where(and(eq(applications.status, "ready"), eq(applications.archived, false)))
+    .orderBy(sql`${jobAssessments.fitScore} desc nulls last`, desc(applications.createdAt));
+
+  if (apps.length === 0) return [];
+  const appIds = apps.map((a) => a.application.id);
+  const jobIds = apps.map((a) => a.job.id);
+  const [answers, drafts] = await Promise.all([
+    db.select().from(screeningAnswers).where(inArray(screeningAnswers.applicationId, appIds)).orderBy(asc(screeningAnswers.sortOrder)),
+    db
+      .select({ outreach, contactName: contacts.name, contactRole: contacts.role, contactUrl: contacts.publicProfileUrl })
+      .from(outreach)
+      .leftJoin(contacts, eq(contacts.id, outreach.contactId))
+      .where(and(inArray(outreach.jobId, jobIds), eq(outreach.status, "drafted")))
+      .orderBy(desc(outreach.createdAt)),
+  ]);
+
+  return apps.map((a) => ({
+    ...a,
+    answers: answers.filter((x) => x.applicationId === a.application.id),
+    outreach: drafts.filter((d) => d.outreach.jobId === a.job.id),
+  }));
 }

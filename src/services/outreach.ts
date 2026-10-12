@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq, inArray, isNull, lte } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lte, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import type { outreachChannelValues, outreachStatusValues } from "@/db/enums";
 import { contacts, jobs, outreach } from "@/db/schema";
@@ -159,6 +159,7 @@ export async function listOutreach(options: { status?: OutreachStatus[]; limit: 
       outreach,
       contact: { name: contacts.name, role: contacts.role, publicProfileUrl: contacts.publicProfileUrl },
       job: { title: jobs.title, companyName: jobs.companyName },
+      followUpDue: sql<boolean>`(${outreach.status} = 'sent' and ${outreach.followUpAt} <= now())`,
     })
     .from(outreach)
     .innerJoin(jobs, eq(jobs.id, outreach.jobId))

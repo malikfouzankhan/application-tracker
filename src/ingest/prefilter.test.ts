@@ -26,13 +26,28 @@ describe("prefilterJob", () => {
     ["Tech Lead - Platform", "title_excluded"],
     ["Engineering Manager", "title_excluded"],
     ["Software Engineering Intern", "title_internship"],
-    ["Sales Executive", "title_no_role_match"],
-    ["Civil Engineer", "title_no_role_match"],
+    ["Sales Executive", "title_excluded"],
+    ["Civil Engineer", "title_excluded"],
+    ["Account Executive", "title_no_role_match"],
+    // Real jobs that slipped through the first version (off-stack or too senior):
+    ["Machine Learning Engineer", "title_excluded"],
+    ["ServiceNow Developer SAM", "title_excluded"],
+    ["Developer Marketer - Sales", "title_excluded"],
+    ["Android Software Engineer", "title_excluded"],
+    ["Software Development Engineer III Data", "title_level_too_high"],
+    ["SDE 3, Payments", "title_level_too_high"],
+    ["Software Engineer IV", "title_level_too_high"],
+    ["Software Engineer (L5)", "title_level_too_high"],
+    ["Java Developer", "title_excluded"],
+    [".NET Developer", "title_excluded"],
+    ["Software Engineer in Test", "title_excluded"],
+    ["Data Engineer (SDE 2)", "title_excluded"],
+    ["Mechanical Design Engineer", "title_excluded"],
   ])("rejects title %s", (title, reason) => {
     expect(run({ title })).toEqual({ passed: false, reason });
   });
 
-  it.each(["Backend Engineer", "SDE-1", "Front-End Developer", "AI/ML Engineer", "Software Engineer I"])(
+  it.each(["Backend Engineer", "SDE-1", "SDE 2 Infra", "Front-End Developer", "AI/ML Engineer", "Software Engineer I", "Software Engineer II", "JavaScript Developer", "Full Stack Developer (Node.js)", "Product Engineer", "AI Platform Engineer"])(
     "accepts title %s",
     (title) => {
       expect(run({ title }).passed).toBe(true);
@@ -65,9 +80,12 @@ describe("prefilterJob", () => {
     });
   });
 
-  it("drops exp_min >= 3 unless dream company, and passes unknown experience", () => {
-    expect(run({ expMin: 3 })).toEqual({ passed: false, reason: "exp_too_high" });
-    expect(run({ expMin: 3, isDreamCompany: true }).passed).toBe(true);
+  it("discards jobs asking more than the stretch band (3y), dream companies get 2 more, unknown passes", () => {
+    expect(run({ expMin: 3 }).passed).toBe(true); // stretch
+    expect(run({ expMin: 4 })).toEqual({ passed: false, reason: "exp_too_high" });
+    expect(run({ expMin: 10 })).toEqual({ passed: false, reason: "exp_too_high" });
+    expect(run({ expMin: 5, isDreamCompany: true }).passed).toBe(true);
+    expect(run({ expMin: 6, isDreamCompany: true })).toEqual({ passed: false, reason: "exp_too_high" });
     expect(run({ expMin: null })).toEqual({ passed: true, reason: "exp_unknown" });
   });
 

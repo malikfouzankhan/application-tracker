@@ -378,11 +378,13 @@ Pipeline:
 7. Pre-filter (`prefilter.ts`), driven by `preferences`:
    - Title matches role keywords (full stack, backend, frontend, software engineer, SDE, AI/ML engineer, etc.) and does not match exclusions (senior, staff, principal, lead, manager, director, intern unless enabled).
    - Location: Hyderabad, India-wide, or remote eligible for India. Unknown location passes with reason `location_unknown`.
-   - Experience (`exp-parse.ts`): parse "0-2 years", "1 to 3 yrs", "2+ years", "minimum 3 years", including en dash variants. Drop if `exp_min >= 3` unless the company `is_dream`. Unknown experience passes.
+   - Experience (`exp-parse.ts`): parse "0-2 years", "1 to 3 yrs", "2+ years", "minimum 3 years", including en dash variants. Drop if `exp_min` exceeds the stretch band (see below). Unknown experience passes.
    - Store `prefilter_passed` and `prefilter_reason` for every job (we keep failed ones for stats).
-     Failed jobs are stored with an empty `description_text` (title, company, location, experience and reason
-     are enough for stats and /jobs). When a failed job is seen again it is re-checked against the current
-     preferences and, if it now passes, requalifies and gets its description.
+     **Failed jobs are discarded, never stored** (MFK only wants relevant jobs); they are re-evaluated if seen
+     again. After each run, stored untouched jobs that no longer pass the current preferences are purged
+     (`purgeIrrelevantJobs`). Title checks also drop seniority levels III/IV/L4+ and stacks/fields outside
+     MFK's skill set (default `title_exclusions`). Experience: discard if `exp_min > exp_bands.stretch_max`
+     (dream companies get +2 years).
 8. Scam signals (`scam.ts`): mentions of fees/deposits/payment, recruiter on free-mail domains, unrealistic pay ranges, missing company identity. Store in `scam_flags`. Do not drop; surface in UI and MCP.
 9. Snowball (`snowball.ts`): any Greenhouse/Lever/Ashby URL found in a job that passes the prefilter (including
    `import_jobs`) yields `(ats, board_token)`. Upsert into `companies` with `source = 'snowball'`. Rejected jobs do
@@ -457,6 +459,13 @@ Tool descriptions are static strings in code, written for the model, never gener
 **Dashboard-only actions (never exposed via MCP):** approve/edit claims, approve resume variants, dismiss jobs, give 👍/👎 feedback, edit answer bank and preferences, revoke MCP clients, toggle kill switch, manual status overrides, archive anything.
 
 ---
+
+### 7.5 Relevance tiers (MFK's definitions, used by `submit_assessments`)
+- **fit**: software role within MFK's skill set; experience asked matches (up to `exp_bands.fit_max`).
+- **justify**: software role within the skill set; experience asked is not exactly MFK's (up to `justify_max`).
+- **stretch**: software role that partially matches the skill set; experience asked is about 2 years more
+  (up to `stretch_max`).
+- **skip**: everything else. Skipped, dismissed and archived jobs are hidden from /jobs entirely.
 
 ## 8. Resume tailoring rules (enforced in code AND described in tool descriptions)
 
@@ -547,11 +556,15 @@ Every item must be implemented and verified before the first real run.
 
 ## 11. Dashboard pages
 
-Design: clean, dense, fast. Tailwind, server components by default, client components only where interactive. Mobile-friendly (MFK will check `/today` on his phone).
+Design: light theme on MFK's palette: background `#EAF4FF`, ink `#071629` (text), navy `#17345C` (primary
+actions, active nav, links), mist `#9DB7D5` (borders, quiet fills); white cards. Left sidebar on desktop, top
+nav on mobile, content capped at `max-w-7xl`. Tokens live in `src/app/globals.css`; primitives in
+`src/components/ui.tsx`. Tailwind, server components by default, client components only where interactive. Mobile-friendly (MFK will check `/today` on his phone).
 
 ### `/today` (home)
 - Today's digest (`digests.summary_md`, rendered as sanitized markdown).
-- Shortlist cards (applications in `ready` created today), ordered by fit_score. Each card: company, title, location, tier badge, fit score, reasons, justify note, scam flags, links to job, resume PDF, screening answers with **copy buttons**, outreach draft with copy button.
+- Shortlist cards (every application still `ready`, marked new if created in the last 24h, so a missed morning never hides
+  packs), ordered by fit_score. Each card: company, title, location, tier badge, fit score, reasons, justify note, scam flags, links to job, resume PDF, screening answers with **copy buttons**, outreach draft with copy button.
 - Actions per card: Approve resume variant, Mark applied (sets channel + applied_at), Dismiss, 👍/👎 with optional reason.
 - Profile nudge box (from digest).
 - Follow-ups due.

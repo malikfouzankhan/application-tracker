@@ -4,7 +4,7 @@ import { isAppError } from "@/lib/errors";
 import { type PollableCompany, listCompaniesToPoll, markCompanyPolled, pauseCompany, pruneInactiveCompanies } from "@/services/companies";
 import { systemContext } from "@/services/context";
 import { type IngestionError, type IngestionRunSummary, recordIngestionRun } from "@/services/ingestion";
-import { ingestNormalized, syncBoardClosures } from "@/services/jobs";
+import { ingestNormalized, purgeIrrelevantJobs, syncBoardClosures } from "@/services/jobs";
 import { FetchError, fetchJson } from "./http";
 import { mapWithConcurrency } from "./pool";
 import { ATS_SOURCES } from "./sources";
@@ -47,16 +47,16 @@ async function pollCompany(company: PollableCompany, t: SourceTally, log: (line:
 
     const result = await ingestNormalized(jobs, ctx);
     t.newJobs += result.inserted;
-    t.passedPrefilter += result.passedPrefilter + result.requalified;
+    t.passedPrefilter += result.passedPrefilter;
     t.snowballed += result.snowballedCompanies;
 
-    const seen = result.items.flatMap((item) => (item.status === "invalid" ? [] : [item]));
+    const seen = result.items.flatMap((item) => (item.status === "new" || item.status === "duplicate" ? [item] : []));
     const closures = await syncBoardClosures(company.id, company.ats, seen.map((i) => i.jobId), ctx);
     await markCompanyPolled(company.id, seen.some((i) => i.prefilterPassed));
 
     log(
       `[${company.ats}] ${company.slug}: ${jobs.length} listed, ${result.inserted} new (${result.passedPrefilter} passed)` +
-        `${result.requalified ? `, ${result.requalified} requalified` : ""}` +
+        `, ${result.dropped} discarded` +
         `${result.invalid ? `, ${result.invalid} invalid` : ""}${closures.closed ? `, ${closures.closed} closed` : ""}`,
     );
   } catch (error) {
@@ -79,7 +79,7 @@ async function pollHn(t: SourceTally, log: (line: string) => void) {
     for (let i = 0; i < jobs.length; i += HN_CHUNK) {
       const result = await ingestNormalized(jobs.slice(i, i + HN_CHUNK), systemContext);
       t.newJobs += result.inserted;
-      t.passedPrefilter += result.passedPrefilter + result.requalified;
+      t.passedPrefilter += result.passedPrefilter;
       t.snowballed += result.snowballedCompanies;
     }
     log(`[hn] thread ${threadId}: ${jobs.length} posts, ${t.newJobs} new (${t.passedPrefilter} passed)`);
@@ -100,6 +100,7 @@ export type IngestionOptions = {
 export type IngestionResult = {
   sources: (IngestionRunSummary & { snowballed: number })[];
   companiesPolled: number;
+  purgedJobs: number;
   prunedToLowFreq: number;
   hadErrors: boolean;
 };
@@ -124,6 +125,15 @@ export async function runIngestion(options: IngestionOptions = {}): Promise<Inge
     await pollHn(hn, log);
   }
 
+  // Drop stored jobs that no longer pass the (possibly tightened) preferences.
+  let purged = 0;
+  try {
+    purged = (await purgeIrrelevantJobs(systemContext)).deleted;
+    if (purged) log(`Purged ${purged} stored jobs that no longer match preferences`);
+  } catch (error) {
+    tallies.set("purge", { ...tally("purge"), errors: [{ target: "purge", message: describeError(error) }] });
+  }
+
   let prunedToLowFreq = 0;
   try {
     prunedToLowFreq = await pruneInactiveCompanies(PRUNE_AFTER_DAYS, systemContext);
@@ -134,13 +144,14 @@ export async function runIngestion(options: IngestionOptions = {}): Promise<Inge
 
   const sources = [...tallies.values()].map((t) => ({ ...t, finishedAt: new Date() }));
   for (const summary of sources) {
-    if (summary.source === "prune") continue;
+    if (summary.source === "prune" || summary.source === "purge") continue;
     await recordIngestionRun(summary);
   }
 
   return {
     sources,
     companiesPolled: companies.length,
+    purgedJobs: purged,
     prunedToLowFreq,
     hadErrors: sources.some((s) => s.errors.length > 0),
   };

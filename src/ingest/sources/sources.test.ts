@@ -136,8 +136,13 @@ describe("HN who is hiring", () => {
   it("parses header lines", () => {
     expect(parseHnHeader("Acme Corp | Backend Engineer | Remote (India) | Full-time")).toEqual({
       companyName: "Acme Corp",
-      title: "Acme Corp | Backend Engineer | Remote (India) | Full-time",
+      title: "Backend Engineer",
       locationRaw: "Remote (India)",
+    });
+    expect(parseHnHeader("Plutus | In Person - Kirkland, WA | Fintech | Full Stack Engineer").locationRaw).toBe("In Person; Kirkland, WA");
+    expect(parseHnHeader("Relativity Space | In Office (Long Beach, CA ) | Software Engineer")).toMatchObject({
+      title: "Software Engineer",
+      locationRaw: "In Office (Long Beach, CA )",
     });
     expect(parseHnHeader("PrairieLearn (Remote US) \u{2014} Full-Stack Software Engineer").companyName).toBe("PrairieLearn");
     expect(parseHnHeader("PrairieLearn (Remote US) \u{2014} Full-Stack Software Engineer").locationRaw).toBe("Remote US");

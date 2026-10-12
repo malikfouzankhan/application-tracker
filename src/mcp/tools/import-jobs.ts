@@ -10,8 +10,9 @@ export const importJobsTool = defineTool({
   description:
     "Add jobs found outside the ATS feeds, e.g. from LinkedIn/Naukri/Indeed/Instahyre alert " +
     "emails. Use the posting's https URL. Runs the same pipeline as daily ingestion (sanitize, " +
-    "dedupe on URL, prefilter, scam flags, company discovery). Safe to retry: known URLs come " +
-    "back as status 'duplicate' with their existing job_id. Returns counts and one item per job.",
+    "dedupe on URL, prefilter, scam flags, company discovery). Jobs outside MFK's roles, stack, " +
+    "locations or experience range come back as status 'dropped' with a reason and are not " +
+    "stored. Safe to retry: known URLs come back as 'duplicate' with their job_id.",
   idempotent: true,
   input: z
     .object({
@@ -49,7 +50,7 @@ export const importJobsTool = defineTool({
     return {
       ...result,
       items: result.items.map((item) =>
-        item.status === "invalid" ? item : { url: item.url, status: item.status, jobId: item.jobId, prefilterPassed: item.prefilterPassed },
+        item.status === "new" || item.status === "duplicate" ? { url: item.url, status: item.status, jobId: item.jobId } : item,
       ),
     };
   },

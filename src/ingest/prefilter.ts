@@ -15,6 +15,8 @@ export type PrefilterInput = {
 
 export type PrefilterResult = { passed: boolean; reason: string | null };
 
+export const DREAM_EXTRA_YEARS = 2;
+
 const REMOTE_NOISE = /\b(remote|work from home|wfh|full[\s-]?time|part[\s-]?time|contract|only|ok|friendly)\b/gi;
 const INDIA_FRIENDLY = /\b(india|indian|ist|asia|apac|anywhere|worldwide|global)\b/i;
 const REMOTE_WORD = /\b(remote|work from home|wfh)\b/i;
@@ -35,9 +37,15 @@ function containsTerm(haystack: string, term: string): boolean {
   return ` ${haystack} `.includes(` ${t} `);
 }
 
+// Seniority levels above an early-career engineer: "SDE III", "Engineer IV", "L5", "SWE 3",
+// "Level 4". SDE 2 / Engineer II stay (justify or stretch territory).
+const SENIOR_LEVEL =
+  /\b(?:sde|swe|engineer|developer|software development engineer|level|grade|e|l|ic|mts)\s*(?:iii|iv|v|vi|[3-9])\b|\b(?:iii|iv)\b/;
+
 function checkTitle(title: string, prefs: Preferences): string | null {
   const t = normalizeTerm(title);
   if (!prefs.include_internships && /\bintern(ship)?s?\b/.test(t)) return "title_internship";
+  if (SENIOR_LEVEL.test(t)) return "title_level_too_high";
   if (prefs.title_exclusions.some((ex) => containsTerm(t, ex))) return "title_excluded";
   if (!prefs.role_keywords.some((kw) => containsTerm(t, kw))) return "title_no_role_match";
   return null;
@@ -80,7 +88,9 @@ export function prefilterJob(input: PrefilterInput, prefs: Preferences): Prefilt
   const location = checkLocation(input, prefs);
   if (!location.ok) return { passed: false, reason: location.reason };
 
-  if (input.expMin !== null && input.expMin >= prefs.drop_exp_min && !input.isDreamCompany) {
+  // Beyond the stretch band the job is not worth MFK's time; dream companies get 2 more years.
+  const maxMin = prefs.exp_bands.stretch_max + (input.isDreamCompany ? DREAM_EXTRA_YEARS : 0);
+  if (input.expMin !== null && input.expMin > maxMin) {
     return { passed: false, reason: "exp_too_high" };
   }
 
