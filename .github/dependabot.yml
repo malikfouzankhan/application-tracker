@@ -7,6 +7,10 @@ updates:
       day: monday
     open-pull-requests-limit: 10
     target-branch: development
+    ignore:
+      # Types must match the Node runtime (22 on Vercel and in Actions), not the latest Node.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
       minor-and-patch:
         update-types: [minor, patch]
