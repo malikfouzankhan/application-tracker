@@ -4,6 +4,7 @@ import { type DbOrTx, db } from "@/db/client";
 import type { archetypeValues, claimKindValues } from "@/db/enums";
 import { baseResumes, claims, jobs, resumeVariants } from "@/db/schema";
 import { AppError } from "@/lib/errors";
+import { newNumbers, unknownSkills, verifiedSkills } from "@/lib/resume-rules";
 import { recordAudit } from "./audit";
 import { type ServiceContext, requireUser } from "./context";
 
@@ -15,6 +16,9 @@ type ClaimKind = (typeof claimKindValues)[number];
 export type ClaimInput = {
   kind: ClaimKind;
   entity: string;
+  role?: string | null;
+  context?: string | null;
+  dateLabel?: string | null;
   text: string;
   metrics?: string | null;
   tags?: string[];
@@ -56,7 +60,9 @@ export async function updateClaim(
   ctx: ServiceContext,
 ) {
   requireUser(ctx);
-  const factChanged = ["entity", "text", "metrics", "startDate", "endDate"].some((k) => k in patch);
+  const factChanged = ["entity", "role", "context", "dateLabel", "text", "metrics", "startDate", "endDate"].some(
+    (k) => k in patch,
+  );
   await db.transaction(async (tx) => {
     const [row] = await tx
       .update(claims)
@@ -136,11 +142,12 @@ export async function getResumeLibrary(options: { archetype?: Archetype } = {}) 
         id: claims.id,
         kind: claims.kind,
         entity: claims.entity,
+        role: claims.role,
+        context: claims.context,
+        dateLabel: claims.dateLabel,
         text: claims.text,
         metrics: claims.metrics,
         tags: claims.tags,
-        startDate: claims.startDate,
-        endDate: claims.endDate,
       })
       .from(claims)
       .where(and(eq(claims.verified, true), eq(claims.active, true)))
@@ -165,13 +172,10 @@ export type VariantInput = {
   rephraseJustifications?: Record<string, string>;
 };
 
-/** Every id must be a verified, active claim (claude.md section 8). */
-async function assertUsableClaims(dbOrTx: DbOrTx, claimIds: string[]) {
-  const rows = await dbOrTx
-    .select({ id: claims.id, verified: claims.verified, active: claims.active })
-    .from(claims)
-    .where(inArray(claims.id, claimIds));
-  const usable = new Set(rows.filter((r) => r.verified && r.active).map((r) => r.id));
+/** Every id must be a verified, active claim (claude.md section 8). Returns them by id. */
+async function loadUsableClaims(dbOrTx: DbOrTx, claimIds: string[]) {
+  const rows = await dbOrTx.select().from(claims).where(inArray(claims.id, claimIds));
+  const usable = new Map(rows.filter((r) => r.verified && r.active).map((r) => [r.id, r]));
   const bad = claimIds.filter((id) => !usable.has(id));
   if (bad.length > 0) {
     throw new AppError(
@@ -179,6 +183,16 @@ async function assertUsableClaims(dbOrTx: DbOrTx, claimIds: string[]) {
       `These claim ids are unknown, unverified or inactive: ${bad.join(", ")}`,
     );
   }
+  return usable;
+}
+
+/** Verified, active skill claims: the only skills a resume may list. */
+export async function listVerifiedSkillClaims(dbOrTx: DbOrTx = db) {
+  return dbOrTx
+    .select({ entity: claims.entity, text: claims.text, sortOrder: claims.sortOrder })
+    .from(claims)
+    .where(and(eq(claims.kind, "skill"), eq(claims.verified, true), eq(claims.active, true)))
+    .orderBy(asc(claims.sortOrder), asc(claims.createdAt));
 }
 
 /**
@@ -213,7 +227,33 @@ export async function createResumeVariant(
       .where(eq(baseResumes.archetype, input.archetype));
     if (!base) throw new AppError("NOT_FOUND", `No base resume for archetype ${input.archetype}`);
 
-    await assertUsableClaims(tx, input.claimIds);
+    const usable = await loadUsableClaims(tx, input.claimIds);
+
+    // Skills must come from verified skill claims (no new technologies).
+    const unknown = unknownSkills(input.skillsOrder, verifiedSkills(await listVerifiedSkillClaims(tx)));
+    if (unknown.length) {
+      throw new AppError("INVALID_INPUT", `skills_order has skills not in MFK's verified skills: ${unknown.join(", ")}`);
+    }
+
+    // Rephrases may not introduce numbers absent from their claim.
+    for (const [id, rephrase] of Object.entries(rephrases)) {
+      const claim = usable.get(id);
+      const added = newNumbers(rephrase, [claim?.text, claim?.metrics, claim?.dateLabel]);
+      if (added.length) {
+        throw new AppError("INVALID_INPUT", `Rephrase for claim ${id} adds numbers not in the claim: ${added.join(", ")}`);
+      }
+    }
+
+    // The summary may only use numbers from the included claims or MFK's verified profile summary.
+    const summaryClaims = await tx
+      .select({ text: claims.text, metrics: claims.metrics })
+      .from(claims)
+      .where(and(eq(claims.kind, "summary"), eq(claims.verified, true), eq(claims.active, true)));
+    const summarySources = [...usable.values(), ...summaryClaims].flatMap((c) => [c.text, c.metrics]);
+    const summaryAdded = newNumbers(input.summary, summarySources);
+    if (summaryAdded.length) {
+      throw new AppError("INVALID_INPUT", `Summary has numbers not found in the included claims: ${summaryAdded.join(", ")}`);
+    }
 
     const [row] = await tx
       .insert(resumeVariants)
@@ -251,7 +291,7 @@ export async function approveResumeVariant(variantId: string, ctx: ServiceContex
     if (!variant) throw new AppError("NOT_FOUND", "Resume variant not found");
     if (variant.status === "approved") throw new AppError("CONFLICT", "Variant is already approved");
 
-    await assertUsableClaims(tx, variant.claimIds);
+    await loadUsableClaims(tx, variant.claimIds);
     await tx.update(resumeVariants).set({ status: "approved" }).where(eq(resumeVariants.id, variantId));
     await recordAudit(tx, ctx, {
       action: "resume.approveVariant",

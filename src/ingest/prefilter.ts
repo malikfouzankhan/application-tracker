@@ -15,8 +15,7 @@ export type PrefilterInput = {
 
 export type PrefilterResult = { passed: boolean; reason: string | null };
 
-const NON_INDIA_REGIONS =
-  /\b(us|usa|u\.s\.?|united states|canada|uk|u\.k\.|united kingdom|europe|eu|emea|latam|americas|north america|germany|france|netherlands|spain|poland|ireland|australia|new zealand|singapore|japan|brazil|mexico|israel|uae|dubai|philippines|vietnam|pakistan)\b/i;
+const REMOTE_NOISE = /\b(remote|work from home|wfh|full[\s-]?time|part[\s-]?time|contract|only|ok|friendly)\b/gi;
 const INDIA_FRIENDLY = /\b(india|indian|ist|asia|apac|anywhere|worldwide|global)\b/i;
 const REMOTE_WORD = /\b(remote|work from home|wfh)\b/i;
 
@@ -59,7 +58,10 @@ function checkLocation(
 
   if (isRemote && prefs.allow_remote_india) {
     if (INDIA_FRIENDLY.test(loc)) return { ok: true, reason: null };
-    if (NON_INDIA_REGIONS.test(loc)) return { ok: false, reason: "remote_not_india" };
+    // Any place named besides "remote" ("San Francisco, Remote", "Remote (US only)") means the
+    // role is tied to somewhere else. Only a bare "Remote" is left for Claude to judge.
+    const rest = loc.replace(REMOTE_NOISE, "").replace(/[^a-z]+/gi, "");
+    if (rest) return { ok: false, reason: "remote_not_india" };
     return { ok: true, reason: "remote_region_unclear" };
   }
 

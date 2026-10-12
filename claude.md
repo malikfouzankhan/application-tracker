@@ -169,7 +169,7 @@ jobs
   country text null
   exp_min int null
   exp_max int null
-  description_text text not null default ''  -- sanitized plain text, max 20,000 chars
+  description_text text not null default ''  -- sanitized plain text, max 20,000 chars; '' when prefilter failed
   source job_source not null
   source_ref text null                       -- ATS job id etc.
   posted_at timestamptz null
@@ -253,7 +253,10 @@ outreach
 ```
 claims                                       -- verified fact library. MFK approves each one.
   kind claim_kind not null
-  entity text not null                       -- e.g. "CheckLife CRM", "Zenoids Technologies"
+  entity text not null                       -- company, school, project or skill category, e.g. "Zenoids Technologies"
+  role text null                             -- job title or degree, e.g. "Software Engineer (Contract)"
+  context text null                          -- sub-project, tech stack or place, e.g. "CheckLife CRM: ..."
+  date_label text null                       -- as printed, e.g. "08/2026 - Present" (else derived from dates)
   text text not null                         -- the canonical bullet
   metrics text null                          -- numbers backing the claim, if any
   tags text[] not null default '{}'          -- backend, frontend, ai, leadership, devops...
@@ -369,16 +372,24 @@ Pipeline:
 3. **SSRF guard:** never fetch a stored URL. Build URLs only from `(ats, board_token)` against a hardcoded host allowlist. Reject tokens not matching `^[a-z0-9-]{1,64}$`.
 4. Normalize to a common `NormalizedJob` type.
 5. Sanitize (`src/ingest/sanitize.ts`): HTML to plain text, remove comments, `<script>`, `<style>`, elements with hidden styling (`display:none`, `visibility:hidden`, `font-size:0`, `color` equal to background where detectable), zero-width and bidi control characters. Collapse whitespace. Cap at 20,000 chars.
-6. Dedupe on `url_hash`. Update `closed_at` for jobs of a polled company that disappeared from its board.
+6. Dedupe on `url_hash` (existing hashes are looked up in bulk, so re-polls are cheap). Update `closed_at` for jobs
+   of a polled company and the same ATS source that disappeared from its board (archived unless shortlisted);
+   reappearing jobs get `closed_at` cleared. A board that returns 404 is set to `paused` and reported once.
 7. Pre-filter (`prefilter.ts`), driven by `preferences`:
    - Title matches role keywords (full stack, backend, frontend, software engineer, SDE, AI/ML engineer, etc.) and does not match exclusions (senior, staff, principal, lead, manager, director, intern unless enabled).
    - Location: Hyderabad, India-wide, or remote eligible for India. Unknown location passes with reason `location_unknown`.
    - Experience (`exp-parse.ts`): parse "0-2 years", "1 to 3 yrs", "2+ years", "minimum 3 years", including en dash variants. Drop if `exp_min >= 3` unless the company `is_dream`. Unknown experience passes.
    - Store `prefilter_passed` and `prefilter_reason` for every job (we keep failed ones for stats).
+     Failed jobs are stored with an empty `description_text` (title, company, location, experience and reason
+     are enough for stats and /jobs). When a failed job is seen again it is re-checked against the current
+     preferences and, if it now passes, requalifies and gets its description.
 8. Scam signals (`scam.ts`): mentions of fees/deposits/payment, recruiter on free-mail domains, unrealistic pay ranges, missing company identity. Store in `scam_flags`. Do not drop; surface in UI and MCP.
-9. Snowball (`snowball.ts`): any Greenhouse/Lever/Ashby URL found in any job (including `import_jobs`) yields `(ats, board_token)`. Upsert into `companies` with `source = 'snowball'`.
+9. Snowball (`snowball.ts`): any Greenhouse/Lever/Ashby URL found in a job that passes the prefilter (including
+   `import_jobs`) yields `(ats, board_token)`. Upsert into `companies` with `source = 'snowball'`. Rejected jobs do
+   not snowball, so the watchlist grows with relevant companies only.
 10. Prune: companies with no prefilter-passing job in 60 days become `low_freq`.
 11. Write one `ingestion_runs` row per source. Exit non-zero if any source had errors, so GitHub emails MFK.
+    Scripts set `DB_USE_DIRECT=1` so `db/client.ts` uses `DIRECT_DATABASE_URL` and needs no other secrets.
 
 Also expose the same pipeline as a service (`services/jobs.ingestNormalized()`) so `import_jobs` reuses sanitize, dedupe, prefilter, scam and snowball.
 
@@ -452,6 +463,10 @@ Tool descriptions are static strings in code, written for the model, never gener
 - Only verified, active claims can appear on a resume. Nothing else.
 - **Rephrasing is allowed** for relevance (emphasis, keywords, wording, order), but a rephrase must not add facts that are not in the claim's `text` or `metrics`: no new technologies, numbers, titles, dates, scope, team sizes or outcomes. Every rephrase requires a one-line justification pointing to what in the original claim supports it.
 - The variant summary may combine facts from included claims only.
+- Enforced in code at variant creation: rephrases and the summary may not contain numbers absent from their source
+  claims, and `skills_order` may only list skills from verified `skill` claims (`src/lib/resume-rules.ts`).
+- Resume header fields (name, headline, email, phone, location, links) live in the answer bank (`full_name`,
+  `headline`, `email`, `phone`, `location`, `linkedin_url`, `github_url`, `website_url`).
 - Variants are created as `draft`. The dashboard shows each rephrase side by side with the original claim. MFK approves before the variant is used. On approval, render once and cache to Storage; approved variants are immutable.
 
 ---
@@ -481,6 +496,8 @@ Everything else requires a Clerk session AND owner check.
 
 ### Resume links (`/r/[variantId]`)
 - Allowed if: valid Clerk owner session, OR `?exp=<unix>&sig=<hmac>` where `sig = HMAC_SHA256(PDF_SIGNING_SECRET, variantId + "." + exp)`, `exp` within 24h, constant-time compare.
+- Approved variants are served from the private `resumes` bucket, drafts are rendered live. Storage URLs never leave
+  the server; unauthorized requests get the same 404 as a missing variant.
 - Response headers: `Cache-Control: private, no-store`, `Content-Disposition: inline; filename="Malik_Fouzan_Khan_<Company>_<Role>.pdf"` (sanitized).
 
 ---
@@ -589,9 +606,10 @@ GitHub Actions secrets: `DIRECT_DATABASE_URL`, `BACKUP_*` as needed.
 pnpm dev                 # local dev
 pnpm db:generate         # drizzle-kit generate
 pnpm db:migrate          # drizzle-kit migrate (uses DIRECT_DATABASE_URL)
-pnpm ingest              # tsx scripts/ingest.ts
-pnpm seed:companies      # tsx scripts/seed-companies.ts
-pnpm seed:claims         # tsx scripts/seed-claims.ts
+pnpm ingest              # scripts/ingest.ts (--only=slug1,slug2 to poll specific companies, --no-hn to skip HN)
+pnpm seed:companies      # scripts/seed-companies.ts (verifies each board before adding; safe to re-run)
+pnpm seed:claims         # scripts/seed-claims.ts (reads seed-data/claims.json; all claims start unverified)
+pnpm seed:answers        # scripts/seed-answers.ts (reads seed-data/profile.json)
 pnpm typecheck && pnpm lint
 pnpm test                # vitest run
 npx @modelcontextprotocol/inspector   # test MCP tools locally
@@ -655,6 +673,10 @@ Run ingestion, then the daily Claude routine (appendix A) manually, then the mor
   transaction and writes exactly one `audit_log` row (`tool` = MCP tool name when called via MCP, so rate
   limits count it). Dashboard-only services call `requireUser(ctx)`.
 - Never use the em dash character in UI copy or generated text.
+- The repo is public. Personal data (resume content, contact details) lives only in the database and in the
+  gitignored `seed-data/` folder, never in committed files.
+- Standalone scripts must not import `@/pdf/*`: react-pdf's ESM-only internals break under tsx's path-alias hook.
+  PDFs are rendered inside Next.js (`/r/[variantId]`, server actions).
 
 ---
 

@@ -1,0 +1,37 @@
+name: Ingest jobs
+
+# Daily ingestion (claude.md section 6). Scheduled runs only fire from the default branch (main).
+on:
+  schedule:
+    - cron: "0 0 * * *" # 00:00 UTC = 05:30 IST
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ingest
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4 # version from package.json "packageManager"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Exits non-zero if any source had errors, so GitHub emails the repo owner.
+      - run: pnpm ingest
+        env:
+          DIRECT_DATABASE_URL: ${{ secrets.DIRECT_DATABASE_URL }}

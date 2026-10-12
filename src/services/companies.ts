@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, eq, inArray, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, lt, or, sql } from "drizzle-orm";
 import { type DbOrTx, db } from "@/db/client";
 import type { companySourceValues, watchStatusValues } from "@/db/enums";
 import { companies } from "@/db/schema";
@@ -183,5 +183,72 @@ export async function updateCompany(
       targetId: id,
       diff: { fields: Object.keys(patch), watchStatus: patch.watchStatus, isDream: patch.isDream },
     });
+  });
+}
+
+export type PollableCompany = { id: string; name: string; slug: string; ats: PollableAts; boardToken: string; watchStatus: WatchStatus };
+
+/** Active boards daily; low-frequency boards only when `includeLowFreq` (Sundays). Paused never. */
+export async function listCompaniesToPoll(includeLowFreq: boolean): Promise<PollableCompany[]> {
+  const rows = await db
+    .select({
+      id: companies.id,
+      name: companies.name,
+      slug: companies.slug,
+      ats: companies.ats,
+      boardToken: companies.boardToken,
+      watchStatus: companies.watchStatus,
+    })
+    .from(companies)
+    .where(
+      and(
+        inArray(companies.ats, [...POLLABLE_ATS]),
+        isNotNull(companies.boardToken),
+        inArray(companies.watchStatus, includeLowFreq ? ["active", "low_freq"] : ["active"]),
+      ),
+    )
+    .orderBy(asc(companies.slug));
+  return rows.flatMap((r) =>
+    r.ats !== "other" && r.boardToken ? [{ ...r, ats: r.ats, boardToken: r.boardToken }] : [],
+  );
+}
+
+/** Records a successful poll. A relevant job brings a low-frequency board back to active. */
+export async function markCompanyPolled(id: string, sawRelevantJob: boolean): Promise<void> {
+  const now = new Date();
+  await db
+    .update(companies)
+    .set({
+      lastPolledAt: now,
+      ...(sawRelevantJob ? { lastRelevantJobAt: now, watchStatus: sql`case when ${companies.watchStatus} = 'low_freq' then 'active'::watch_status else ${companies.watchStatus} end` } : {}),
+    })
+    .where(eq(companies.id, id));
+}
+
+/** A board that no longer exists is paused so it stops failing every run. */
+export async function pauseCompany(id: string, reason: string, ctx: ServiceContext): Promise<void> {
+  await db.transaction(async (tx) => {
+    await tx.update(companies).set({ watchStatus: "paused" }).where(eq(companies.id, id));
+    await recordAudit(tx, ctx, { action: "companies.pause", targetType: "company", targetId: id, diff: { reason } });
+  });
+}
+
+/** Active boards with no prefilter-passing job in `days` days drop to low frequency. */
+export async function pruneInactiveCompanies(days: number, ctx: ServiceContext): Promise<number> {
+  return db.transaction(async (tx) => {
+    const rows = await tx
+      .update(companies)
+      .set({ watchStatus: "low_freq" })
+      .where(
+        and(
+          eq(companies.watchStatus, "active"),
+          lt(sql`coalesce(${companies.lastRelevantJobAt}, ${companies.createdAt})`, sql`now() - make_interval(days => ${days})`),
+        ),
+      )
+      .returning({ id: companies.id });
+    if (rows.length) {
+      await recordAudit(tx, ctx, { action: "companies.prune", targetType: "company", diff: { lowFreq: rows.length, days } });
+    }
+    return rows.length;
   });
 }

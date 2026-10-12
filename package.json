@@ -10,7 +10,11 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate": "drizzle-kit migrate",
+    "ingest": "node --conditions=react-server --env-file-if-exists=.env.local --import tsx scripts/ingest.ts",
+    "seed:companies": "node --conditions=react-server --env-file-if-exists=.env.local --import tsx scripts/seed-companies.ts",
+    "seed:claims": "node --conditions=react-server --env-file-if-exists=.env.local --import tsx scripts/seed-claims.ts",
+    "seed:answers": "node --conditions=react-server --env-file-if-exists=.env.local --import tsx scripts/seed-answers.ts"
   },
   "dependencies": {
     "@clerk/mcp-tools": "0.6.0",

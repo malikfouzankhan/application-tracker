@@ -50,6 +50,15 @@ describe("prefilterJob", () => {
       passed: false,
       reason: "remote_not_india",
     });
+    // Regressions from the first real run: remote roles tied to a foreign place.
+    for (const loc of ["San Francisco, New York, Remote", "Remote but Boston based only", "REMOTE (US or Canada) or Toronto", "Remote, Vienna"]) {
+      expect(run({ locationRaw: loc, remoteType: "remote" }), loc).toEqual({ passed: false, reason: "remote_not_india" });
+    }
+    for (const loc of ["Remote, Global", "Full Time, Remote India", "Remote (APAC)", "Anywhere"]) {
+      expect(run({ locationRaw: loc, remoteType: "remote" }).passed, loc).toBe(true);
+    }
+    expect(run({ locationRaw: "Remote, Remote", remoteType: "remote" })).toEqual({ passed: true, reason: "remote_region_unclear" });
+    expect(run({ locationRaw: "Foster City, CA", remoteType: "onsite" }).passed).toBe(false);
     expect(run({ locationRaw: null, remoteType: "unknown" })).toEqual({
       passed: true,
       reason: "location_unknown",
@@ -110,5 +119,25 @@ describe("detectScamFlags", () => {
         description: "Build APIs in Node.js. Competitive salary and health insurance.",
       }),
     ).toEqual([]);
+  });
+});
+
+describe("snowball from escaped HTML", () => {
+  it("finds board links once entities are decoded", async () => {
+    const { decodeHtmlEntities } = await import("./sanitize");
+    const escaped = 'Apply: <a href="https:&#x2F;&#x2F;jobs.lever.co&#x2F;acme-labs&#x2F;123">here</a>';
+    expect(extractBoardRefs(escaped)).toEqual([]);
+    expect(extractBoardRefs(decodeHtmlEntities(escaped))).toEqual([{ ats: "lever", boardToken: "acme-labs" }]);
+  });
+});
+
+describe("inferRemoteType", () => {
+  it("trusts the location over the description", async () => {
+    const { inferRemoteType } = await import("./normalize");
+    expect(inferRemoteType("Foster City, CA", "We are a remote-first team")).toBe("onsite");
+    expect(inferRemoteType("Hybrid - Hyderabad")).toBe("hybrid");
+    expect(inferRemoteType("Remote, India")).toBe("remote");
+    expect(inferRemoteType(null, "This is a fully remote role")).toBe("remote");
+    expect(inferRemoteType(null, "")).toBe("unknown");
   });
 });

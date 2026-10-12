@@ -266,7 +266,10 @@ export const outreach = pgTable(
 export const claims = pgTable("claims", {
   id: id(),
   kind: claimKind("kind").notNull(),
-  entity: text("entity").notNull(),
+  entity: text("entity").notNull(), // company, school, project or skill category
+  role: text("role"), // job title or degree, e.g. "Software Engineer (Contract)"
+  context: text("context"), // sub-project, tech stack or place, e.g. "CheckLife CRM"
+  dateLabel: text("date_label"), // as printed, e.g. "08/2026 - Present"
   text: text("text").notNull(),
   metrics: text("metrics"),
   tags: textArray("tags"),

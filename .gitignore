@@ -41,3 +41,5 @@ yarn-error.log*
 next-env.d.ts
 
 tunnel.txt
+# Personal seed data (resume, contact details). Never commit: the repo is public.
+/seed-data/

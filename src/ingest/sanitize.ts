@@ -202,6 +202,19 @@ export function sanitizeExternalText(
   return truncate(collapseWhitespace(raw.replace(INVISIBLE_CHARS, "")), maxChars);
 }
 
+/**
+ * Decodes HTML entities without interpreting tags. For sources that HTML-escape their HTML
+ * (Greenhouse `content`), so it can then go through sanitizeExternalText as real HTML.
+ */
+export function decodeHtmlEntities(input: string): string {
+  const out: string[] = [];
+  const parser = new Parser({ ontext: (text) => out.push(text) }, { decodeEntities: true });
+  // Escaped HTML has no literal "<", so the whole input is text. Guard anyway.
+  parser.write(input.replace(/</g, "&lt;"));
+  parser.end();
+  return out.join("");
+}
+
 /** Short single-line fields (titles, company names, locations). */
 export function sanitizeLine(input: string | null | undefined, maxChars = 300): string {
   return sanitizeExternalText(input, maxChars).text.replace(/\s*\n+\s*/g, " ");

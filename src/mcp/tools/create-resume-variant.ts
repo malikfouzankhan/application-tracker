@@ -16,8 +16,12 @@ export const createResumeVariantTool = defineTool({
     "add facts that are not in the claim's text or metrics: no new technologies, numbers, titles, " +
     "dates, scope, team sizes or outcomes. Every rephrase needs a one-line justification pointing " +
     "to what in the original claim supports it, and its claim must be in claim_ids. The summary " +
-    "may only combine facts from the included claims. The variant is a draft until MFK approves " +
-    "it. Returns the variant id and a signed PDF link valid for 24 hours.",
+    "may only combine facts from the included claims. Rephrases and the summary may not contain " +
+    "numbers that are not in their source claims, and skills_order may only list skills from " +
+    "MFK's verified skill claims (both checked in code, INVALID_INPUT otherwise). Include the " +
+    "education and certification claims you want shown; experience is grouped by company, role " +
+    "and sub-project automatically. The variant is a draft until MFK approves it. Returns the " +
+    "variant id and a signed PDF link valid for 24 hours.",
   input: z
     .object({
       job_id: uuid,
