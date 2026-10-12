@@ -1,24 +1,30 @@
-import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { clerkMiddleware } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { env } from "@/lib/env";
 
-// Deny by default. Only these routes skip the session + owner check (claude.md section 9).
-const isPublicRoute = createRouteMatcher([
-  "/sign-in(.*)",
-  "/.well-known/oauth-protected-resource(.*)",
-  "/.well-known/oauth-authorization-server(.*)",
-  "/api/mcp", // bearer auth handled by withMcpAuth in the route
-  "/r/(.*)", // handler requires session OR valid signature
-]);
+// Deny by default (claude.md section 9). This is the outer layer only: every page, server action
+// and route handler also checks the owner itself (requireOwner / withMcpAuth / signed links).
 
-export default clerkMiddleware(async (auth, req) => {
-  if (isPublicRoute(req)) return;
+// Exact public paths, matched against the pathname only.
+const PUBLIC_PATHS: RegExp[] = [
+  /^\/sign-in(\/.*)?$/,
+  /^\/\.well-known\/oauth-protected-resource(\/.*)?$/,
+  /^\/\.well-known\/oauth-authorization-server(\/.*)?$/,
+  /^\/api\/mcp$/, // bearer auth handled by withMcpAuth in the route
+  /^\/r\/[^/]+$/, // handler requires session OR valid signature
+];
 
-  const { userId } = await auth.protect();
-  if (userId !== env.OWNER_CLERK_USER_ID) {
-    return new NextResponse("Not found", { status: 404 });
-  }
-});
+export default clerkMiddleware(
+  async (auth, req) => {
+    if (PUBLIC_PATHS.some((re) => re.test(req.nextUrl.pathname))) return;
+
+    const { userId } = await auth.protect();
+    if (userId !== env.OWNER_CLERK_USER_ID) {
+      return new NextResponse("Not found", { status: 404 });
+    }
+  },
+  { signInUrl: "/sign-in" },
+);
 
 export const config = {
   matcher: [

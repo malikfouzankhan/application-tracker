@@ -1,0 +1,24 @@
+version: 2
+updates:
+  - package-ecosystem: npm # works with pnpm-lock.yaml
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    target-branch: development
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+        exclude-patterns:
+          # Pinned on purpose (claude.md section 10): review MCP stack upgrades one by one.
+          - mcp-handler
+          - "@modelcontextprotocol/*"
+          - "@clerk/mcp-tools"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    target-branch: development

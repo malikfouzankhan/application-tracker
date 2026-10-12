@@ -8,7 +8,13 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "ingest": "node --conditions=react-server --env-file-if-exists=.env.local --import tsx scripts/ingest.ts",
+    "seed:companies": "node --conditions=react-server --env-file-if-exists=.env.local --import tsx scripts/seed-companies.ts",
+    "seed:claims": "node --conditions=react-server --env-file-if-exists=.env.local --import tsx scripts/seed-claims.ts",
+    "seed:answers": "node --conditions=react-server --env-file-if-exists=.env.local --import tsx scripts/seed-answers.ts"
   },
   "dependencies": {
     "@clerk/mcp-tools": "0.6.0",
@@ -17,11 +23,13 @@
     "@react-pdf/renderer": "^4.9.0",
     "@supabase/supabase-js": "^2.117.3",
     "drizzle-orm": "^0.45.4",
+    "htmlparser2": "^12.0.0",
     "mcp-handler": "2.3.0",
     "next": "16.4.0",
     "postgres": "^3.4.9",
     "react": "19.3.0",
     "react-dom": "19.3.0",
+    "react-markdown": "^10.1.0",
     "server-only": "^0.0.1",
     "zod": "^4.6.5"
   },

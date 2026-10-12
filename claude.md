@@ -169,7 +169,7 @@ jobs
   country text null
   exp_min int null
   exp_max int null
-  description_text text not null default ''  -- sanitized plain text, max 20,000 chars
+  description_text text not null default ''  -- sanitized plain text, max 20,000 chars; '' when prefilter failed
   source job_source not null
   source_ref text null                       -- ATS job id etc.
   posted_at timestamptz null
@@ -210,6 +210,7 @@ applications
   next_action text null
   next_action_at timestamptz null
   notes text null
+  cover_note text null                       -- <= 2,500, from save_application_pack
   archived boolean not null default false
   INDEX (status, applied_at desc)
   INDEX (updated_at desc)
@@ -243,6 +244,8 @@ outreach
   status outreach_status not null default 'drafted'
   sent_at timestamptz null
   follow_up_at timestamptz null
+  note text null                             -- <= 500, from update_outreach_status
+  INDEX (status, follow_up_at)
 ```
 
 ### 5.4 Resume and profile
@@ -250,7 +253,10 @@ outreach
 ```
 claims                                       -- verified fact library. MFK approves each one.
   kind claim_kind not null
-  entity text not null                       -- e.g. "CheckLife CRM", "Zenoids Technologies"
+  entity text not null                       -- company, school, project or skill category, e.g. "Zenoids Technologies"
+  role text null                             -- job title or degree, e.g. "Software Engineer (Contract)"
+  context text null                          -- sub-project, tech stack or place, e.g. "CheckLife CRM: ..."
+  date_label text null                       -- as printed, e.g. "08/2026 - Present" (else derived from dates)
   text text not null                         -- the canonical bullet
   metrics text null                          -- numbers backing the claim, if any
   tags text[] not null default '{}'          -- backend, frontend, ai, leadership, devops...
@@ -314,6 +320,7 @@ audit_log
   ok boolean not null
   error_code text null
   INDEX (tool, created_at desc)
+  INDEX (tool, client_id, created_at desc)   -- rate limiting
 
 mcp_clients
   client_id text not null unique             -- CIMD: a URL; DCR: opaque id
@@ -365,16 +372,26 @@ Pipeline:
 3. **SSRF guard:** never fetch a stored URL. Build URLs only from `(ats, board_token)` against a hardcoded host allowlist. Reject tokens not matching `^[a-z0-9-]{1,64}$`.
 4. Normalize to a common `NormalizedJob` type.
 5. Sanitize (`src/ingest/sanitize.ts`): HTML to plain text, remove comments, `<script>`, `<style>`, elements with hidden styling (`display:none`, `visibility:hidden`, `font-size:0`, `color` equal to background where detectable), zero-width and bidi control characters. Collapse whitespace. Cap at 20,000 chars.
-6. Dedupe on `url_hash`. Update `closed_at` for jobs of a polled company that disappeared from its board.
+6. Dedupe on `url_hash` (existing hashes are looked up in bulk, so re-polls are cheap). Update `closed_at` for jobs
+   of a polled company and the same ATS source that disappeared from its board (archived unless shortlisted);
+   reappearing jobs get `closed_at` cleared. A board that returns 404 is set to `paused` and reported once.
 7. Pre-filter (`prefilter.ts`), driven by `preferences`:
    - Title matches role keywords (full stack, backend, frontend, software engineer, SDE, AI/ML engineer, etc.) and does not match exclusions (senior, staff, principal, lead, manager, director, intern unless enabled).
    - Location: Hyderabad, India-wide, or remote eligible for India. Unknown location passes with reason `location_unknown`.
-   - Experience (`exp-parse.ts`): parse "0-2 years", "1 to 3 yrs", "2+ years", "minimum 3 years", including en dash variants. Drop if `exp_min >= 3` unless the company `is_dream`. Unknown experience passes.
+   - Experience (`exp-parse.ts`): parse "0-2 years", "1 to 3 yrs", "2+ years", "minimum 3 years", including en dash variants. Drop if `exp_min` exceeds the stretch band (see below). Unknown experience passes.
    - Store `prefilter_passed` and `prefilter_reason` for every job (we keep failed ones for stats).
+     **Failed jobs are discarded, never stored** (MFK only wants relevant jobs); they are re-evaluated if seen
+     again. After each run, stored untouched jobs that no longer pass the current preferences are purged
+     (`purgeIrrelevantJobs`). Title checks also drop seniority levels III/IV/L4+ and stacks/fields outside
+     MFK's skill set (default `title_exclusions`). Experience: discard if `exp_min > exp_bands.stretch_max`
+     (dream companies get +2 years).
 8. Scam signals (`scam.ts`): mentions of fees/deposits/payment, recruiter on free-mail domains, unrealistic pay ranges, missing company identity. Store in `scam_flags`. Do not drop; surface in UI and MCP.
-9. Snowball (`snowball.ts`): any Greenhouse/Lever/Ashby URL found in any job (including `import_jobs`) yields `(ats, board_token)`. Upsert into `companies` with `source = 'snowball'`.
+9. Snowball (`snowball.ts`): any Greenhouse/Lever/Ashby URL found in a job that passes the prefilter (including
+   `import_jobs`) yields `(ats, board_token)`. Upsert into `companies` with `source = 'snowball'`. Rejected jobs do
+   not snowball, so the watchlist grows with relevant companies only.
 10. Prune: companies with no prefilter-passing job in 60 days become `low_freq`.
 11. Write one `ingestion_runs` row per source. Exit non-zero if any source had errors, so GitHub emails MFK.
+    Scripts set `DB_USE_DIRECT=1` so `db/client.ts` uses `DIRECT_DATABASE_URL` and needs no other secrets.
 
 Also expose the same pipeline as a service (`services/jobs.ingestNormalized()`) so `import_jobs` reuses sanitize, dedupe, prefilter, scam and snowball.
 
@@ -443,11 +460,22 @@ Tool descriptions are static strings in code, written for the model, never gener
 
 ---
 
+### 7.5 Relevance tiers (MFK's definitions, used by `submit_assessments`)
+- **fit**: software role within MFK's skill set; experience asked matches (up to `exp_bands.fit_max`).
+- **justify**: software role within the skill set; experience asked is not exactly MFK's (up to `justify_max`).
+- **stretch**: software role that partially matches the skill set; experience asked is about 2 years more
+  (up to `stretch_max`).
+- **skip**: everything else. Skipped, dismissed and archived jobs are hidden from /jobs entirely.
+
 ## 8. Resume tailoring rules (enforced in code AND described in tool descriptions)
 
 - Only verified, active claims can appear on a resume. Nothing else.
 - **Rephrasing is allowed** for relevance (emphasis, keywords, wording, order), but a rephrase must not add facts that are not in the claim's `text` or `metrics`: no new technologies, numbers, titles, dates, scope, team sizes or outcomes. Every rephrase requires a one-line justification pointing to what in the original claim supports it.
 - The variant summary may combine facts from included claims only.
+- Enforced in code at variant creation: rephrases and the summary may not contain numbers absent from their source
+  claims, and `skills_order` may only list skills from verified `skill` claims (`src/lib/resume-rules.ts`).
+- Resume header fields (name, headline, email, phone, location, links) live in the answer bank (`full_name`,
+  `headline`, `email`, `phone`, `location`, `linkedin_url`, `github_url`, `website_url`).
 - Variants are created as `draft`. The dashboard shows each rephrase side by side with the original claim. MFK approves before the variant is used. On approval, render once and cache to Storage; approved variants are immutable.
 
 ---
@@ -477,60 +505,79 @@ Everything else requires a Clerk session AND owner check.
 
 ### Resume links (`/r/[variantId]`)
 - Allowed if: valid Clerk owner session, OR `?exp=<unix>&sig=<hmac>` where `sig = HMAC_SHA256(PDF_SIGNING_SECRET, variantId + "." + exp)`, `exp` within 24h, constant-time compare.
+- Approved variants are served from the private `resumes` bucket, drafts are rendered live. Storage URLs never leave
+  the server; unauthorized requests get the same 404 as a missing variant.
 - Response headers: `Cache-Control: private, no-store`, `Content-Disposition: inline; filename="Malik_Fouzan_Khan_<Company>_<Role>.pdf"` (sanitized).
 
 ---
 
 ## 10. Security requirements checklist
 
-Every item must be implemented and verified before the first real run.
+Every item must be implemented and verified before the first real run. Status after M7 (2026-10-12):
+`[x]` done and verified in code/tests; `[ ]` needs production configuration (README "Production setup checklist").
 
 **Access**
 - [ ] Clerk access mode Invite-only, passwords disabled, email-code sign-in only (owner Gmail has 2FA).
-- [ ] Owner check on every page, server action, route handler and MCP tool.
-- [ ] Proxy deny-by-default with the explicit public allowlist above.
-- [ ] Kill switch (`app_settings.mcp_enabled`) in Settings, checked first in guard.
-- [ ] MCP clients list in Settings with revoke.
+      Production Clerk instance setting (README step 2).
+- [x] Owner check on every page (`requireOwnerPage`), server action (`runAction`), route handler (`/r`, export,
+      `/api/mcp`) and MCP tool (guard step 3).
+- [x] Proxy deny-by-default with the explicit public allowlist above (`src/proxy.ts`, explicit path regexes).
+- [x] Kill switch (`app_settings.mcp_enabled`) in Settings, checked first in guard.
+- [x] MCP clients list in Settings with revoke.
 
 **Data**
-- [ ] Data API disabled in Supabase project settings. As defense in depth, RLS enabled on all tables with no policies (migration). If the Data API is ever enabled, verify with the publishable key that every table returns zero rows.
-- [ ] Publishable key unused. Secret key (`sb_secret_...`) only in server code, only for Storage. No legacy anon/service_role keys.
-- [ ] Storage bucket `resumes` private. Signed URLs only.
-- [ ] Sensitive answer-bank values masked in MCP output by default.
-- [ ] No PII in logs or `audit_log.diff`. No `console.log` of request bodies.
-- [ ] `env.ts` validates all env vars with zod at boot; `.env*` gitignored; GitHub secret scanning on.
+- [x] Data API disabled in Supabase project settings (confirmed by MFK). RLS enabled on all tables with no policies.
+- [x] Publishable key unused. Secret key (`sb_secret_...`) only in `src/lib/storage.ts` (server-only), only for Storage.
+- [x] Storage bucket `resumes` private (created private; refuses to run if public). Files are streamed through `/r`
+      behind session or 24h HMAC signature; storage URLs never leave the server.
+- [x] Sensitive answer-bank values masked in MCP output by default.
+- [x] No PII in logs or `audit_log.diff` (logs carry error names/codes only; diffs carry ids, counts, field names).
+- [ ] `env.ts` validates all env vars with zod at boot [x]; `.env*` gitignored [x]; GitHub secret scanning and push
+      protection on (repo setting, README step 4).
 
 **AI/MCP**
-- [ ] External text sanitized at ingest (section 6.5) and wrapped in `external_content` in tool output.
-- [ ] No delete tools, no outbound tools.
-- [ ] zod `.strict()` schemas with max lengths and max array sizes on every tool.
-- [ ] Rate limits per tool per client.
-- [ ] Idempotent upserts for retryable writes.
-- [ ] State machine enforced for MCP status changes.
-- [ ] Tool descriptions and server instructions are static strings.
+- [x] External text sanitized at ingest and wrapped in `external_content` in tool output.
+- [x] No delete tools, no outbound tools.
+- [x] zod `.strict()` schemas with max lengths and max array/record sizes on every tool.
+- [x] Rate limits per tool per client.
+- [x] Idempotent upserts for retryable writes.
+- [x] State machine enforced for MCP status changes.
+- [x] Tool descriptions and server instructions are static strings.
 
 **Web**
-- [ ] Never render external HTML. Job descriptions render as plain text (`whitespace-pre-wrap`). If HTML rendering is ever added, DOMPurify first.
-- [ ] Security headers in `next.config` (`headers()`): `Content-Security-Policy` (allow Clerk domains as its docs require, `frame-ancestors 'none'`), `X-Frame-Options: DENY`, `Strict-Transport-Security`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy` minimal.
-- [ ] Server actions rely on Next.js origin checks; custom mutating route handlers verify `Origin` header.
-- [ ] No open redirects: redirect targets must be relative paths from an allowlist.
-- [ ] Ingestion SSRF guard (host allowlist, token regex).
-- [ ] Lockfile committed, Dependabot enabled, `pnpm audit` in CI, MCP SDK and mcp-handler versions pinned.
+- [x] Never render external HTML. Job descriptions render as plain text; the Claude-written digest is rendered with
+      react-markdown with raw HTML and images disabled.
+- [x] Security headers in `next.config.ts` via `src/lib/security-headers.ts`: CSP (Clerk Frontend API derived from the
+      publishable key, `frame-ancestors 'none'`, `object-src 'none'`), `X-Frame-Options: DENY`, HSTS, `nosniff`,
+      `Referrer-Policy`, minimal `Permissions-Policy`, COOP; `X-Powered-By` removed. No nonces: Partial Prerendering
+      is incompatible with nonce CSP, so inline scripts are allowed. Verified in Chromium: 0 CSP violations.
+- [x] Server actions rely on Next.js origin checks; there are no custom mutating cookie-auth route handlers
+      (`/api/mcp` uses bearer tokens; `/r` and export are GET).
+- [x] No open redirects: the only `redirect()` is a fixed `/today`; Clerk validates its own redirect URLs.
+- [x] Ingestion SSRF guard (host allowlist, https only, no redirects, token regex, size and time caps).
+- [x] Lockfile committed, Dependabot (`.github/dependabot.yml`), `pnpm audit --prod` gate in CI (`ci.yml`), MCP SDK,
+      mcp-handler and @clerk/mcp-tools pinned exactly. Accepted: `braces` (dev-only via eslint, no patched release).
 
 **Ops**
-- [ ] Weekly `pg_dump` via `backup.yml` to private storage (encrypted artifact or private bucket), keep last 8.
-- [ ] Ingestion failures fail the workflow (email alert).
-- [ ] README section: secret rotation steps (Clerk, Supabase, PDF signing secret, GitHub secrets).
+- [ ] Weekly `pg_dump` via `backup.yml`, AES-256 encrypted artifact, 56-day retention (last 8). Needs the
+      `BACKUP_PASSPHRASE` secret and one manual run (README step 4).
+- [x] Ingestion failures fail the workflow (email alert).
+- [x] README section: secret rotation steps (Clerk, Supabase, PDF signing secret, GitHub secrets), OAuth grant
+      revocation, backups and restore.
 
 ---
 
 ## 11. Dashboard pages
 
-Design: clean, dense, fast. Tailwind, server components by default, client components only where interactive. Mobile-friendly (MFK will check `/today` on his phone).
+Design: light theme on MFK's palette: background `#EAF4FF`, ink `#071629` (text), navy `#17345C` (primary
+actions, active nav, links), mist `#9DB7D5` (borders, quiet fills); white cards. Left sidebar on desktop, top
+nav on mobile, content capped at `max-w-7xl`. Tokens live in `src/app/globals.css`; primitives in
+`src/components/ui.tsx`. Tailwind, server components by default, client components only where interactive. Mobile-friendly (MFK will check `/today` on his phone).
 
 ### `/today` (home)
 - Today's digest (`digests.summary_md`, rendered as sanitized markdown).
-- Shortlist cards (applications in `ready` created today), ordered by fit_score. Each card: company, title, tier badge, fit score, reasons, justify note, scam flags, links to job, resume PDF, screening answers with **copy buttons**, outreach draft with copy button.
+- Shortlist cards (every application still `ready`, marked new if created in the last 24h, so a missed morning never hides
+  packs), ordered by fit_score. Each card: company, title, location, tier badge, fit score, reasons, justify note, scam flags, links to job, resume PDF, screening answers with **copy buttons**, outreach draft with copy button.
 - Actions per card: Approve resume variant, Mark applied (sets channel + applied_at), Dismiss, 👍/👎 with optional reason.
 - Profile nudge box (from digest).
 - Follow-ups due.
@@ -541,7 +588,7 @@ One place to see every application across all statuses.
 - **Filters** (all combinable, persisted in URL search params so views are bookmarkable):
   status (multi), tier, archetype, job source, channel, company (search), date range (created / applied), has outreach (y/n), outreach status, scam-flagged, dream company, include archived.
 - Free-text search over company and title.
-- Columns: company, title, status badge, tier, fit score, applied date, last update, next action, outreach status, source.
+- Columns: company, title, location (with remote/hybrid badge), status badge, tier, fit score, applied date, last update, next action, outreach status, source.
 - Row click opens `/applications/[id]`.
 - **Kanban toggle**: same filters, columns by status, drag to change status (user override rules apply).
 - Bulk actions (user only): archive, mark ghosted.
@@ -585,9 +632,10 @@ GitHub Actions secrets: `DIRECT_DATABASE_URL`, `BACKUP_*` as needed.
 pnpm dev                 # local dev
 pnpm db:generate         # drizzle-kit generate
 pnpm db:migrate          # drizzle-kit migrate (uses DIRECT_DATABASE_URL)
-pnpm ingest              # tsx scripts/ingest.ts
-pnpm seed:companies      # tsx scripts/seed-companies.ts
-pnpm seed:claims         # tsx scripts/seed-claims.ts
+pnpm ingest              # scripts/ingest.ts (--only=slug1,slug2 to poll specific companies, --no-hn to skip HN)
+pnpm seed:companies      # scripts/seed-companies.ts (verifies each board before adding; safe to re-run)
+pnpm seed:claims         # scripts/seed-claims.ts (reads seed-data/claims.json; all claims start unverified)
+pnpm seed:answers        # scripts/seed-answers.ts (reads seed-data/profile.json)
 pnpm typecheck && pnpm lint
 pnpm test                # vitest run
 npx @modelcontextprotocol/inspector   # test MCP tools locally
@@ -643,8 +691,18 @@ Run ingestion, then the daily Claude routine (appendix A) manually, then the mor
 - Services return typed results and throw typed `AppError` (`code`, `message`). MCP layer maps codes to tool errors.
 - Dates stored UTC; displayed in Asia/Kolkata.
 - Small focused files. One MCP tool per file.
-- Tests with Vitest for pure logic (parsers, sanitizer, state machine, signing, prefilter).
+- Tests with Vitest for pure logic (parsers, sanitizer, state machine, signing, prefilter). Keep testable logic
+  in modules that do not import `server-only`, `@/lib/env` or `@/db/client`.
+- `server-only` throws outside Next.js. Standalone scripts that import services run with
+  `node --conditions=react-server --env-file=.env.local --import tsx <script>`.
+- Services take a `ServiceContext` (`actor`, `clientId`, `tool`). Each mutating service call runs in one
+  transaction and writes exactly one `audit_log` row (`tool` = MCP tool name when called via MCP, so rate
+  limits count it). Dashboard-only services call `requireUser(ctx)`.
 - Never use the em dash character in UI copy or generated text.
+- The repo is public. Personal data (resume content, contact details) lives only in the database and in the
+  gitignored `seed-data/` folder, never in committed files.
+- Standalone scripts must not import `@/pdf/*`: react-pdf's ESM-only internals break under tsx's path-alias hook.
+  PDFs are rendered inside Next.js (`/r/[variantId]`, server actions).
 
 ---
 

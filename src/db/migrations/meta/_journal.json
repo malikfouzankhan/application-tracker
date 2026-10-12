@@ -1,0 +1,34 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1791625645882,
+      "tag": "0000_init",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1791629408855,
+      "tag": "0001_pack_cover_note_outreach_note",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791629415982,
+      "tag": "0002_seed_mcp_enabled",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791785343642,
+      "tag": "0003_claim_role_context_date_label",
+      "breakpoints": true
+    }
+  ]
+}

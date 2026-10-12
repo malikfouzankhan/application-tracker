@@ -1,26 +1,69 @@
 @import "tailwindcss";
 
+/*
+ * Light theme from MFK's palette:
+ *   #EAF4FF  page background (sky)
+ *   #071629  ink: main text, strongest emphasis
+ *   #17345C  navy: primary actions, active nav, links, headings
+ *   #9DB7D5  mist: borders, dividers, quiet fills
+ * Surfaces are white so content reads as cards on the sky background.
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --sky: #eaf4ff;
+  --ink: #071629;
+  --navy: #17345c;
+  --mist: #9db7d5;
+
+  --background: var(--sky);
+  --surface: #ffffff;
+  --subtle: #f4f9ff;
+  --foreground: var(--ink);
+  --muted: #4e6789;
+  --border: color-mix(in srgb, var(--mist) 55%, white);
+  --accent: var(--navy);
 }
 
 @theme inline {
+  --color-sky: var(--sky);
+  --color-ink: var(--ink);
+  --color-navy: var(--navy);
+  --color-mist: var(--mist);
   --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-subtle: var(--subtle);
   --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  /* A slightly larger scale than Tailwind's default keeps dense screens readable. */
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.15rem;
+  --text-sm: 0.9375rem;
+  --text-sm--line-height: 1.4rem;
+  --text-base: 1rem;
+  --text-lg: 1.1875rem;
+  --text-2xl: 1.625rem;
+
+  --shadow-card: 0 1px 2px rgb(7 22 41 / 0.04), 0 4px 16px -8px rgb(23 52 92 / 0.12);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  color-scheme: light;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--mist) 60%, white);
+}
+
+:focus-visible {
+  outline: 2px solid var(--navy);
+  outline-offset: 2px;
 }
