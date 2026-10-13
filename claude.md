@@ -572,7 +572,8 @@ Every item must be implemented and verified before the first real run. Status af
 Design: light theme on MFK's palette: background `#EAF4FF`, ink `#071629` (text), navy `#17345C` (primary
 actions, active nav, links), mist `#9DB7D5` (borders, quiet fills); white cards. Left sidebar on desktop, top
 nav on mobile, content capped at `max-w-7xl`. Tokens live in `src/app/globals.css`; primitives in
-`src/components/ui.tsx`. Tailwind, server components by default, client components only where interactive. Mobile-friendly (MFK will check `/today` on his phone).
+`src/components/ui.tsx`. Dropdowns use `src/components/client/select.tsx` (Radix Select, pinned; submits through a
+hidden input so it works in plain forms). Tailwind, server components by default, client components only where interactive. Mobile-friendly (MFK will check `/today` on his phone).
 
 ### `/today` (home)
 - Today's digest (`digests.summary_md`, rendered as sanitized markdown).
@@ -593,13 +594,18 @@ One place to see every application across all statuses.
 - **Kanban toggle**: same filters, columns by status, drag to change status (user override rules apply).
 - Bulk actions (user only): archive, mark ghosted.
 - CSV export of the current filtered view.
+- **Add application** (`/applications/new`): track an application made outside the platform (company, role, optional
+  posting link, location, work mode, where found, experience, description, status, channel, applied date, next action,
+  notes, optional tier/score/archetype). The job is stored even if it would fail the prefilter; a known URL reuses the
+  existing job; a second application to the same job is refused.
 - Pagination (50 per page), server-side filtering.
 
 ### `/applications/[id]`
 Job details (plain text), assessment, resume variant (with rephrase diff + approve), screening answers (editable), outreach, full status history timeline, notes.
 
 ### Other pages
-- `/jobs`: all ingested jobs with filters (stage, prefilter passed/failed + reason, source, date). Lets MFK see what the prefilter dropped.
+- `/jobs`: relevant jobs only, with tier chips and counts (All, Fit, Justify, Stretch, Not assessed yet), stage, source
+  and search. Irrelevant jobs are never stored; skipped, dismissed and archived jobs are hidden.
 - `/outreach`: drafted/sent/replied, follow-ups due, copy buttons, mark sent/replied.
 - `/library`: claims CRUD with verify toggle, base resumes editor (pick + order claims), variants awaiting approval.
 - `/answers`: answer bank editor with sensitive toggle.

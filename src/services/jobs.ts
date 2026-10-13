@@ -370,19 +370,43 @@ export async function syncBoardClosures(
 }
 
 /** Stages shown on /jobs. Dismissed, archived and Claude-skipped jobs are hidden entirely. */
-export const VISIBLE_JOB_STAGES = ["new", "assessed", "shortlisted"] as const;
+const VISIBLE_JOB_STAGES = ["new", "assessed", "shortlisted"] as const;
+
+/** Everything /jobs filters on except the tier (the tier chips show counts across tiers). */
+function visibleJobsWhere(f: JobFilters) {
+  return and(
+    eq(jobs.prefilterPassed, true),
+    inArray(jobs.stage, f.stage ? [f.stage] : [...VISIBLE_JOB_STAGES]),
+    sql`(${jobAssessments.tier} is null or ${jobAssessments.tier} <> 'skip')`,
+    f.source ? eq(jobs.source, f.source) : undefined,
+    f.q ? or(ilike(jobs.companyName, likePattern(f.q)), ilike(jobs.title, likePattern(f.q))) : undefined,
+    f.since ? gte(jobs.firstSeenAt, sql`${f.since}::timestamp at time zone 'Asia/Kolkata'`) : undefined,
+  );
+}
+
+/** Counts per tier ("unassessed" = Claude has not judged it yet) for the /jobs tier chips. */
+export async function countJobsByTier(f: JobFilters): Promise<Record<"all" | "fit" | "justify" | "stretch" | "unassessed", number>> {
+  const rows = await db
+    .select({ tier: jobAssessments.tier, n: count() })
+    .from(jobs)
+    .leftJoin(jobAssessments, eq(jobAssessments.jobId, jobs.id))
+    .where(visibleJobsWhere(f))
+    .groupBy(jobAssessments.tier);
+  const counts = { all: 0, fit: 0, justify: 0, stretch: 0, unassessed: 0 };
+  for (const r of rows) {
+    const key = r.tier ?? "unassessed";
+    if (key in counts) counts[key as keyof typeof counts] += r.n;
+    counts.all += r.n;
+  }
+  return counts;
+}
 
 /** /jobs: relevant jobs only (fit, justify, stretch, or not assessed yet). */
 export async function searchJobs(f: JobFilters) {
   const PAGE = 50;
   const where = and(
-    eq(jobs.prefilterPassed, true),
-    inArray(jobs.stage, f.stage ? [f.stage] : [...VISIBLE_JOB_STAGES]),
-    sql`(${jobAssessments.tier} is null or ${jobAssessments.tier} <> 'skip')`,
-    f.tier ? eq(jobAssessments.tier, f.tier) : undefined,
-    f.source ? eq(jobs.source, f.source) : undefined,
-    f.q ? or(ilike(jobs.companyName, likePattern(f.q)), ilike(jobs.title, likePattern(f.q))) : undefined,
-    f.since ? gte(jobs.firstSeenAt, sql`${f.since}::timestamp at time zone 'Asia/Kolkata'`) : undefined,
+    visibleJobsWhere(f),
+    f.tier === "unassessed" ? isNull(jobAssessments.tier) : f.tier ? eq(jobAssessments.tier, f.tier) : undefined,
   );
   const [rows, [{ n }]] = await Promise.all([
     db

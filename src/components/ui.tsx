@@ -1,4 +1,3 @@
-import Link from "next/link";
 import type { ReactNode } from "react";
 import { STATUS_TONE, TIER_TONE, type Tone, humanize } from "@/lib/format";
 
@@ -17,12 +16,11 @@ export const btn = {
   small: "px-2.5 py-1.5 text-xs",
 };
 
-export const inputClass =
-  "w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink placeholder:text-muted/70 outline-none transition-colors focus:border-navy focus:ring-2 focus:ring-mist/40";
+/** Input look without a width, for fields sized explicitly (e.g. number boxes). */
+export const inputBase =
+  "rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink placeholder:text-muted/70 outline-none transition-colors focus:border-navy focus:ring-2 focus:ring-mist/40";
 
-/** Same look as inputClass but sized to content, for selects that sit inline next to buttons. */
-export const selectInline =
-  "rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink outline-none transition-colors focus:border-navy focus:ring-2 focus:ring-mist/40";
+export const inputClass = `w-full ${inputBase}`;
 
 export const labelClass = "flex flex-col gap-1 text-xs font-medium text-muted";
 
@@ -132,28 +130,12 @@ export function ExternalText({ text, className }: { text: string; className?: st
 }
 
 export function ExternalLink({ href, children }: { href: string; children: ReactNode }) {
-  const safe = /^https?:\/\//i.test(href) ? href : "#";
+  // Manually added jobs without a posting get an internal "manual:" id instead of a URL.
+  if (!/^https?:\/\//i.test(href)) return <span>{children}</span>;
+  const safe = href;
   return (
     <a href={safe} target="_blank" rel="noopener noreferrer nofollow" className="font-medium text-navy underline decoration-mist underline-offset-2 hover:decoration-navy">
       {children}
     </a>
-  );
-}
-
-export function NavLink({ href, children }: { href: string; children: ReactNode }) {
-  return (
-    <Link href={href} className="font-medium text-navy underline decoration-mist underline-offset-2 hover:decoration-navy">
-      {children}
-    </Link>
-  );
-}
-
-/** Small label/value line used in detail panels. */
-export function Meta({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="flex justify-between gap-4 py-1.5 text-sm">
-      <span className="text-muted">{label}</span>
-      <span className="text-right text-ink">{children}</span>
-    </div>
   );
 }

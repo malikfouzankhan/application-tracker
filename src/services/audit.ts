@@ -44,7 +44,7 @@ export async function recordCallAudit(ctx: ServiceContext, entry: AuditEntry): P
 }
 
 /** Calls of `tool` by `clientId` in the rate-limit window, counted from audit_log. */
-export async function countRecentCalls(tool: string, clientId: string | null): Promise<number> {
+async function countRecentCalls(tool: string, clientId: string | null): Promise<number> {
   const [row] = await db
     .select({ n: count() })
     .from(auditLog)

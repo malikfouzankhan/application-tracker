@@ -52,7 +52,7 @@ export function decideAppTransition(from: AppStatus, to: AppStatus, actor: Actor
 }
 
 // Job stage: new -> assessed -> shortlisted | dismissed, any -> archived.
-export const JOB_STAGE_TRANSITIONS: Record<JobStage, readonly JobStage[]> = {
+const JOB_STAGE_TRANSITIONS: Record<JobStage, readonly JobStage[]> = {
   new: ["assessed", "shortlisted", "dismissed", "archived"],
   assessed: ["shortlisted", "dismissed", "archived"],
   shortlisted: ["dismissed", "archived"],

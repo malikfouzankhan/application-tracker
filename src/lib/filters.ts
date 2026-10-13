@@ -22,7 +22,7 @@ const flag = z.preprocess((v) => one(v) === "1", z.boolean());
 
 export const APPLICATION_SORTS = ["activity", "applied", "created", "fit", "company"] as const;
 
-export const applicationFiltersSchema = z.object({
+const applicationFiltersSchema = z.object({
   status: z.preprocess(many, z.array(z.string())).transform((s) =>
     s.filter((x): x is (typeof appStatusValues)[number] => (appStatusValues as readonly string[]).includes(x)),
   ),
@@ -52,9 +52,9 @@ export function parseApplicationFilters(params: SearchParams): ApplicationFilter
   return applicationFiltersSchema.parse(params);
 }
 
-export const jobFiltersSchema = z.object({
+const jobFiltersSchema = z.object({
   stage: opt(z.enum(["new", "assessed", "shortlisted"])),
-  tier: opt(z.enum(["fit", "justify", "stretch"])),
+  tier: opt(z.enum(["fit", "justify", "stretch", "unassessed"])),
   source: opt(z.enum(jobSourceValues)),
   q: opt(z.string().trim().max(100)),
   since: optDate,

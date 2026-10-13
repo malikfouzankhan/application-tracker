@@ -20,6 +20,7 @@
     "@clerk/mcp-tools": "0.6.0",
     "@clerk/nextjs": "^7.9.13",
     "@modelcontextprotocol/server": "2.3.1",
+    "@radix-ui/react-select": "2.3.7",
     "@react-pdf/renderer": "^4.9.0",
     "@supabase/supabase-js": "^2.117.3",
     "drizzle-orm": "^0.45.4",

@@ -41,6 +41,7 @@ Validated at boot by `src/lib/env.ts`. Never prefix anything except the Clerk pu
 | `OWNER_CLERK_USER_ID` | Clerk → Users → your user (differs between dev and production instances) |
 | `SUPABASE_URL`, `SUPABASE_SECRET_KEY` | Supabase → Project Settings → API keys (new `sb_secret_...` key) |
 | `PDF_SIGNING_SECRET` | `openssl rand -base64 32` (use a different value per environment) |
+| `CLERK_DISABLE_AUTO_PROXY` | Production only: `1`. Clerk v7 otherwise routes its scripts through `/__clerk` on Vercel, which this app does not serve (blank sign-in page). Clerk is reached via the `clerk.fouzan.dev` DNS record instead. |
 
 GitHub Actions secrets: `DIRECT_DATABASE_URL` (ingestion, backup), `BACKUP_PASSPHRASE` (backup).
 
@@ -107,7 +108,7 @@ Do these once, in order. Items marked **(you)** need dashboard access.
 
 **3. Vercel (you)**
 - [ ] Import the GitHub repo; framework Next.js; production branch `main`.
-- [ ] Environment variables (Production): `APP_URL=https://jobs.fouzan.dev`, `DATABASE_URL`, `DIRECT_DATABASE_URL`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY` (**live** keys), `OWNER_CLERK_USER_ID` (**production** user), `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `PDF_SIGNING_SECRET` (**new** value). Do not set `DEV_TUNNEL_HOST`.
+- [ ] Environment variables (Production): `APP_URL=https://jobs.fouzan.dev`, `DATABASE_URL`, `DIRECT_DATABASE_URL`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY` (**live** keys), `OWNER_CLERK_USER_ID` (**production** user), `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `PDF_SIGNING_SECRET` (**new** value), `CLERK_DISABLE_AUTO_PROXY=1`. Do not set `DEV_TUNNEL_HOST`.
 - [ ] Domains: add `jobs.fouzan.dev`; at your DNS provider add `CNAME jobs → cname.vercel-dns.com` (or what Vercel shows).
 - [ ] Deploy (merge `development` into `main`).
 

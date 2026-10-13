@@ -37,7 +37,6 @@ export const preferencesSchema = z
 
 export type Preferences = z.infer<typeof preferencesSchema>;
 export type PreferenceKey = keyof Preferences;
-export const preferenceKeys = Object.keys(preferencesSchema.shape) as PreferenceKey[];
 
 export const DEFAULT_PREFERENCES: Preferences = {
   role_keywords: [

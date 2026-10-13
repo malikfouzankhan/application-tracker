@@ -3,7 +3,7 @@ import { Suspense } from "react";
 import { outreachStatusAction } from "@/actions/misc";
 import { ActionForm, SubmitButton } from "@/components/client/action-form";
 import { CopyButton } from "@/components/client/copy-button";
-import { Badge, Card, Empty, ExternalLink, Loading, PageHeader, SectionTitle, StatusBadge, btn, cx, inputClass } from "@/components/ui";
+import { Badge, Card, Empty, ExternalLink, Loading, PageHeader, SectionTitle, StatusBadge, btn, cx, inputBase } from "@/components/ui";
 import { requireOwnerPage } from "@/lib/auth";
 import { fmtDate, fmtRelative, humanize } from "@/lib/format";
 import { listOutreach } from "@/services/outreach";
@@ -90,7 +90,7 @@ function OutreachCard({ row }: { row: Row }) {
         <CopyButton text={o.message} label="Copy message" />
         {next.map((s) => (
           <ActionForm key={s} action={outreachStatusAction.bind(null, o.id, s)} className="flex gap-1">
-            {s !== "sent" ? <input name="note" placeholder="Note" maxLength={500} className={cx(inputClass, "w-40 py-1 text-xs")} /> : null}
+            {s !== "sent" ? <input name="note" placeholder="Note" maxLength={500} className={cx(inputBase, "w-56")} /> : null}
             <SubmitButton className={cx(btn.base, btn.secondary)}>Mark {humanize(s)}</SubmitButton>
           </ActionForm>
         ))}

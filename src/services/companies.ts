@@ -13,7 +13,7 @@ type WatchStatus = (typeof watchStatusValues)[number];
 
 const POLLABLE_ATS: readonly PollableAts[] = ["greenhouse", "lever", "ashby"];
 
-export function slugify(name: string): string {
+function slugify(name: string): string {
   return (
     name
       .normalize("NFKD")
@@ -150,11 +150,6 @@ export async function findCompanyForJob(
     .where(sql`lower(${companies.name}) = lower(${companyName.trim()})`)
     .limit(1);
   return byName ?? null;
-}
-
-export async function getCompaniesByIds(ids: string[]) {
-  if (ids.length === 0) return [];
-  return db.select().from(companies).where(inArray(companies.id, ids));
 }
 
 export async function listCompanies() {

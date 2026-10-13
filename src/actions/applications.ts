@@ -1,9 +1,19 @@
 "use server";
 
 import { z } from "zod";
-import { appChannelValues, appStatusValues, feedbackVerdictValues } from "@/db/enums";
+import { redirect } from "next/navigation";
+import {
+  appChannelValues,
+  appStatusValues,
+  archetypeValues,
+  feedbackVerdictValues,
+  jobSourceValues,
+  remoteTypeValues,
+  tierValues,
+} from "@/db/enums";
 import {
   bulkMarkGhosted,
+  createManualApplication,
   dismissPack,
   markApplied,
   setApplicationsArchived,
@@ -102,4 +112,38 @@ export async function feedbackAction(jobId: string, verdict: string, _prev: Acti
     );
     return "Thanks, noted";
   });
+}
+
+const optionalInt = (max: number) =>
+  z.preprocess((v) => (v === null || v === "" ? null : Number(v)), z.number().int().min(0).max(max).nullable());
+
+/** "Add application" form: an application made outside the platform. Redirects to it on success. */
+export async function createManualApplicationAction(_prev: ActionResult, formData: FormData) {
+  let applicationId: string | null = null;
+  const result = await runAction(async () => {
+    const appliedOn = z.iso.date().nullable().parse(field(formData, "applied_on"));
+    const input = {
+      companyName: z.string().min(1, "Company is required").max(200).parse(field(formData, "company")),
+      title: z.string().min(1, "Job title is required").max(300).parse(field(formData, "title")),
+      url: z.url({ protocol: /^https?$/, error: "Job URL must start with http(s)://" }).max(2048).nullable().parse(field(formData, "url")),
+      locationRaw: z.string().max(300).nullable().parse(field(formData, "location")),
+      remoteType: z.enum(remoteTypeValues).parse(field(formData, "remote_type") ?? "unknown"),
+      source: z.enum(jobSourceValues).parse(field(formData, "source") ?? "manual"),
+      expMin: optionalInt(30).parse(field(formData, "exp_min")),
+      expMax: optionalInt(30).parse(field(formData, "exp_max")),
+      description: z.string().max(50_000).nullable().parse(field(formData, "description")),
+      status: z.enum(appStatusValues).parse(field(formData, "status")),
+      channel: z.enum(appChannelValues).nullable().parse(field(formData, "channel")),
+      appliedAt: appliedOn ? new Date(`${appliedOn}T12:00:00+05:30`) : null,
+      nextAction: z.string().max(300).nullable().parse(field(formData, "next_action")),
+      nextActionAt: istDateTime(field(formData, "next_action_at")),
+      notes: z.string().max(5000).nullable().parse(field(formData, "notes")),
+      tier: z.enum(tierValues).nullable().parse(field(formData, "tier")),
+      fitScore: optionalInt(100).parse(field(formData, "fit_score")),
+      archetype: z.enum(archetypeValues).nullable().parse(field(formData, "archetype")),
+    };
+    ({ applicationId } = await createManualApplication(input, userContext));
+  });
+  if (result?.ok && applicationId) redirect(`/applications/${applicationId}`);
+  return result;
 }

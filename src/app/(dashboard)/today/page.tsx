@@ -4,6 +4,7 @@ import { dismissPackAction, feedbackAction, markAppliedAction } from "@/actions/
 import { approveVariantAction } from "@/actions/library";
 import { outreachStatusAction } from "@/actions/misc";
 import { ActionForm, SubmitButton } from "@/components/client/action-form";
+import { Select } from "@/components/client/select";
 import { CopyButton } from "@/components/client/copy-button";
 import { Markdown } from "@/components/markdown";
 import {
@@ -18,7 +19,6 @@ import {
   Stat,
   TierBadge,
   btn,
-  selectInline,
   cx,
   inputClass,
 } from "@/components/ui";
@@ -153,7 +153,7 @@ function PackCard({ pack }: { pack: Pack }) {
         <div className="flex flex-col items-end gap-2">
           <TierBadge tier={assessment?.tier} score={assessment?.fitScore} />
           <div className="flex gap-3 text-sm">
-            <ExternalLink href={job.url}>Job posting</ExternalLink>
+            {job.url.startsWith("http") ? <ExternalLink href={job.url}>Job posting</ExternalLink> : <span>No posting link</span>}
             {variant ? (
               <a href={`/r/${variant.id}`} target="_blank" rel="noopener" className="font-medium text-navy underline decoration-mist underline-offset-2 hover:decoration-navy">
                 Resume{variant.status === "draft" ? " (draft)" : ""}
@@ -249,13 +249,13 @@ function PackCard({ pack }: { pack: Pack }) {
           </ActionForm>
         ) : null}
         <ActionForm action={markAppliedAction.bind(null, app.id)} className="flex flex-wrap gap-2">
-          <select name="channel" defaultValue="careers_page" className={selectInline} aria-label="Applied via">
-            {appChannelValues.map((c) => (
-              <option key={c} value={c}>
-                via {humanize(c)}
-              </option>
-            ))}
-          </select>
+          <Select
+            name="channel"
+            label="Applied via"
+            inline
+            defaultValue="careers_page"
+            options={appChannelValues.map((c) => ({ value: c, label: `via ${humanize(c)}` }))}
+          />
           <SubmitButton className={cx(btn.base, btn.primary)}>Mark applied</SubmitButton>
         </ActionForm>
         <ActionForm action={dismissPackAction.bind(null, app.id)} confirm="Dismiss this job? The application is withdrawn.">

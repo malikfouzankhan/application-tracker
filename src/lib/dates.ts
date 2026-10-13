@@ -2,7 +2,7 @@
 export const APP_TIME_ZONE = "Asia/Kolkata";
 
 /** YYYY-MM-DD for `date` as seen in `timeZone`. */
-export function isoDateInZone(date: Date, timeZone: string = APP_TIME_ZONE): string {
+function isoDateInZone(date: Date, timeZone: string = APP_TIME_ZONE): string {
   // en-CA formats as YYYY-MM-DD.
   return new Intl.DateTimeFormat("en-CA", {
     timeZone,
@@ -17,7 +17,7 @@ export function todayIst(now: Date = new Date()): string {
 }
 
 /** Adds whole days to a YYYY-MM-DD string. */
-export function addDays(isoDate: string, days: number): string {
+function addDays(isoDate: string, days: number): string {
   const [y, m, d] = isoDate.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
 }

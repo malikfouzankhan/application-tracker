@@ -11,7 +11,7 @@ function snakeKey(key: string): string {
 }
 
 /** Deep copy with snake_case keys and Dates as ISO strings. */
-export function toWire(value: unknown): unknown {
+function toWire(value: unknown): unknown {
   if (value instanceof Date) return value.toISOString();
   if (Array.isArray(value)) return value.map(toWire);
   if (value && typeof value === "object") {

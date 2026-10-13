@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { savePreferencesAction, setClientRevokedAction, setMcpEnabledAction } from "@/actions/misc";
 import { ActionForm, SubmitButton } from "@/components/client/action-form";
-import { Badge, Card, Loading, PageHeader, SectionTitle, btn, cx, inputClass } from "@/components/ui";
+import { Badge, Card, Loading, PageHeader, SectionTitle, btn, cx, inputBase, inputClass } from "@/components/ui";
 import { requireOwnerPage } from "@/lib/auth";
 import { fmtDate, fmtRelative } from "@/lib/format";
 import type { Preferences } from "@/lib/preferences";
@@ -84,7 +84,7 @@ function NumberField({ name, label, value }: { name: string; label: string; valu
   return (
     <label className="flex flex-col gap-1 text-xs font-medium text-muted">
       {label}
-      <input type="number" name={name} min={0} max={30} defaultValue={value} className={cx(inputClass, "w-24 text-xs")} />
+      <input type="number" name={name} min={0} max={30} defaultValue={value} className={cx(inputBase, "w-28")} />
     </label>
   );
 }

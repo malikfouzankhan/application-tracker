@@ -7,7 +7,8 @@ import {
   updateClaimAction,
 } from "@/actions/library";
 import { ActionForm, SubmitButton } from "@/components/client/action-form";
-import { Badge, Card, Empty, Loading, PageHeader, SectionTitle, btn, cx, inputClass } from "@/components/ui";
+import { Select } from "@/components/client/select";
+import { Badge, Card, Empty, Loading, PageHeader, SectionTitle, btn, cx, inputBase, inputClass } from "@/components/ui";
 import { VariantReview } from "@/components/variant-review";
 import type { claims as claimsTable } from "@/db/schema";
 import { archetypeValues, claimKindValues } from "@/db/enums";
@@ -144,13 +145,7 @@ function ClaimFields({ claim: c }: { claim?: Claim }) {
     <div className="grid gap-2 sm:grid-cols-3">
       <label className="flex flex-col gap-1 text-xs font-medium text-muted">
         Kind
-        <select name="kind" defaultValue={c?.kind ?? "experience"} className={inputClass}>
-          {claimKindValues.map((k) => (
-            <option key={k} value={k}>
-              {k}
-            </option>
-          ))}
-        </select>
+        <Select name="kind" defaultValue={c?.kind ?? "experience"} options={claimKindValues.map((k) => ({ value: k, label: humanize(k) }))} />
       </label>
       {input("entity", "Entity (company, school, project, skill category)", c?.entity)}
       {input("role", "Role or degree", c?.role)}
@@ -198,7 +193,7 @@ function BaseResumeEditor({
             {claims.map((c) => (
               <label key={c.id} className="flex items-start gap-2 text-xs">
                 <input type="checkbox" name="claim" value={c.id} defaultChecked={base?.claimIds.includes(c.id)} className="mt-0.5" />
-                <input name={`order_${c.id}`} defaultValue={position(c.id)} inputMode="numeric" aria-label="Order" className={cx(inputClass, "w-14 py-0.5 text-xs")} />
+                <input name={`order_${c.id}`} defaultValue={position(c.id)} inputMode="numeric" aria-label="Order" className={cx(inputBase, "w-16 px-2 py-1 text-center")} />
                 <span>
                   <span className="text-muted">{c.entity}: </span>
                   {c.text}
