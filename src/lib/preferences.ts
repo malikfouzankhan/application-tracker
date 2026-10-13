@@ -18,6 +18,11 @@ export const preferencesSchema = z
     /** Remote roles pass unless they name a non-India region. */
     allow_remote_india: z.boolean(),
     /**
+     * Remote roles pass in any region (Claude judges at assessment whether the employer hires
+     * from India). Overrides the region check of allow_remote_india.
+     */
+    allow_remote_anywhere: z.boolean(),
+    /**
      * Minimum years of experience a job may ask for, per tier. Jobs asking more than
      * stretch_max are discarded in code (dream companies get 2 extra years).
      */
@@ -170,6 +175,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     "anywhere in india",
   ],
   allow_remote_india: true,
+  allow_remote_anywhere: true,
   exp_bands: { fit_max: 1, justify_max: 2, stretch_max: 3 },
   excluded_companies: [],
   keywords: [],

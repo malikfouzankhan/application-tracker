@@ -64,8 +64,10 @@ function checkLocation(
   if (prefs.locations.some((l) => containsTerm(normalized, l))) return { ok: true, reason: null };
   if (/^india$/i.test(loc)) return { ok: true, reason: null };
 
-  if (isRemote && prefs.allow_remote_india) {
+  if (isRemote && (prefs.allow_remote_india || prefs.allow_remote_anywhere)) {
     if (INDIA_FRIENDLY.test(loc)) return { ok: true, reason: null };
+    // Open to global remote: keep it, and let Claude check whether the employer hires from India.
+    if (prefs.allow_remote_anywhere) return { ok: true, reason: "remote_any_region" };
     // Any place named besides "remote" ("San Francisco, Remote", "Remote (US only)") means the
     // role is tied to somewhere else. Only a bare "Remote" is left for Claude to judge.
     const rest = loc.replace(REMOTE_NOISE, "").replace(/[^a-z]+/gi, "");

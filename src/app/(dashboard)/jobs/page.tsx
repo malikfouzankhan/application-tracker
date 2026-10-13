@@ -87,7 +87,7 @@ async function JobsContent({ searchParams }: { searchParams: PageProps<"/jobs">[
         <Empty>
           {f.tier && f.tier !== "unassessed"
             ? `No ${f.tier} jobs yet. Tiers come from Claude's daily assessment; ${counts.unassessed} ${counts.unassessed === 1 ? "job is" : "jobs are"} still waiting to be assessed.`
-            : "No relevant jobs match. New ones arrive with the daily run at 05:30 IST."}
+            : "No relevant jobs match. New ones arrive with the early-morning runs (02:43 and 04:13 IST)."}
         </Empty>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-border bg-surface shadow-card">

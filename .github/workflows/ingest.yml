@@ -1,9 +1,14 @@
 name: Ingest jobs
 
 # Daily ingestion (claude.md section 6). Scheduled runs only fire from the default branch (main).
+#
+# GitHub cron is best effort: jobs at the top of the hour (especially 00:00 UTC) are often delayed by
+# hours or dropped. So: off-peak minutes, well before Claude's 06:30 IST routine, and a second run as
+# a backup. Ingestion is idempotent, so the second run only picks up anything new.
 on:
   schedule:
-    - cron: "0 0 * * *" # 00:00 UTC = 05:30 IST
+    - cron: "13 21 * * *" # 21:13 UTC = 02:43 IST
+    - cron: "43 22 * * *" # 22:43 UTC = 04:13 IST (backup)
   workflow_dispatch:
 
 permissions:

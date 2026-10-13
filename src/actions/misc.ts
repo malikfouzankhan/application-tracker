@@ -106,6 +106,7 @@ export async function savePreferencesAction(_prev: ActionResult, formData: FormD
       include_internships: formData.get("include_internships") === "on",
       locations: lines(formData, "locations"),
       allow_remote_india: formData.get("allow_remote_india") === "on",
+      allow_remote_anywhere: formData.get("allow_remote_anywhere") === "on",
       exp_bands: {
         fit_max: Number(field(formData, "fit_max")),
         justify_max: Number(field(formData, "justify_max")),
