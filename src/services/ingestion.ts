@@ -1,4 +1,5 @@
 import "server-only";
+import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { ingestionRuns } from "@/db/schema";
 
@@ -25,4 +26,16 @@ export async function recordIngestionRun(run: IngestionRunSummary): Promise<void
     passedPrefilter: run.passedPrefilter,
     errors: run.errors,
   });
+}
+
+/** For get_briefing: when ingestion last finished and how many new jobs the last day brought. */
+export async function getIngestionFreshness(): Promise<{ lastRunFinishedAt: Date | null; newJobsLast24h: number }> {
+  const [row] = await db
+    .select({
+      lastRunFinishedAt: sql<Date | null>`max(${ingestionRuns.finishedAt})`,
+      newJobsLast24h: sql<number>`coalesce(sum(${ingestionRuns.newJobs}) filter (where ${ingestionRuns.startedAt} > now() - interval '24 hours'), 0)::int`,
+    })
+    .from(ingestionRuns);
+  const last = row?.lastRunFinishedAt;
+  return { lastRunFinishedAt: last ? new Date(last) : null, newJobsLast24h: row?.newJobsLast24h ?? 0 };
 }

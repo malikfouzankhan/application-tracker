@@ -14,6 +14,9 @@ const base: PrefilterInput = {
 };
 const run = (overrides: Partial<PrefilterInput>) =>
   prefilterJob({ ...base, ...overrides }, DEFAULT_PREFERENCES);
+const INDIA_REMOTE_ONLY = { ...DEFAULT_PREFERENCES, allow_remote_anywhere: false };
+const runIndiaRemote = (overrides: Partial<PrefilterInput>) =>
+  prefilterJob({ ...base, ...overrides }, INDIA_REMOTE_ONLY);
 
 describe("prefilterJob", () => {
   it("passes a matching job", () => {
@@ -61,18 +64,22 @@ describe("prefilterJob", () => {
     }
     expect(run({ locationRaw: "India" }).passed).toBe(true);
     expect(run({ locationRaw: "Remote - India", remoteType: "remote" }).passed).toBe(true);
-    expect(run({ locationRaw: "Remote (US only)", remoteType: "remote" })).toEqual({
+    expect(runIndiaRemote({ locationRaw: "Remote (US only)", remoteType: "remote" })).toEqual({
       passed: false,
       reason: "remote_not_india",
     });
     // Regressions from the first real run: remote roles tied to a foreign place.
     for (const loc of ["San Francisco, New York, Remote", "Remote but Boston based only", "REMOTE (US or Canada) or Toronto", "Remote, Vienna"]) {
-      expect(run({ locationRaw: loc, remoteType: "remote" }), loc).toEqual({ passed: false, reason: "remote_not_india" });
+      expect(runIndiaRemote({ locationRaw: loc, remoteType: "remote" }), loc).toEqual({ passed: false, reason: "remote_not_india" });
+      // Open to global remote (the default): the same roles pass, flagged for Claude to check.
+      expect(run({ locationRaw: loc, remoteType: "remote" }), loc).toEqual({ passed: true, reason: "remote_any_region" });
     }
     for (const loc of ["Remote, Global", "Full Time, Remote India", "Remote (APAC)", "Anywhere"]) {
       expect(run({ locationRaw: loc, remoteType: "remote" }).passed, loc).toBe(true);
     }
-    expect(run({ locationRaw: "Remote, Remote", remoteType: "remote" })).toEqual({ passed: true, reason: "remote_region_unclear" });
+    expect(runIndiaRemote({ locationRaw: "Remote, Remote", remoteType: "remote" })).toEqual({ passed: true, reason: "remote_region_unclear" });
+    // Onsite elsewhere is still dropped, even when open to global remote.
+    expect(run({ locationRaw: "San Francisco, CA", remoteType: "onsite" })).toEqual({ passed: false, reason: "location_mismatch" });
     expect(run({ locationRaw: "Foster City, CA", remoteType: "onsite" }).passed).toBe(false);
     expect(run({ locationRaw: null, remoteType: "unknown" })).toEqual({
       passed: true,

@@ -7,6 +7,7 @@ import { getApplicationFollowUpsDue, getPipelineCounts } from "./applications";
 import { recordAudit } from "./audit";
 import type { ServiceContext } from "./context";
 import { getFeedbackSummary } from "./feedback";
+import { getIngestionFreshness } from "./ingestion";
 import { getOutreachFollowUpsDue } from "./outreach";
 import { getPreferences } from "./preferences";
 
@@ -38,7 +39,7 @@ export async function getDigest(date: string) {
 
 /** get_briefing: everything the daily routine needs to start, in one call. */
 export async function getBriefing(now: Date = new Date()) {
-  const [{ preferences }, feedback, pipeline, applicationFollowUps, outreachFollowUps, yesterday] =
+  const [{ preferences }, feedback, pipeline, applicationFollowUps, outreachFollowUps, yesterday, ingestion] =
     await Promise.all([
       getPreferences(),
       getFeedbackSummary(30),
@@ -46,10 +47,12 @@ export async function getBriefing(now: Date = new Date()) {
       getApplicationFollowUpsDue(now),
       getOutreachFollowUpsDue(now),
       getDigest(yesterdayIst(now)),
+      getIngestionFreshness(),
     ]);
 
   return {
     todayIst: todayIst(now),
+    ingestion,
     preferences,
     feedback,
     pipeline,

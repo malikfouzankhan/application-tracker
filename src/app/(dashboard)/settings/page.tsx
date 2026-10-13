@@ -107,6 +107,9 @@ function PreferencesForm({ prefs }: { prefs: Preferences }) {
           <input type="checkbox" name="allow_remote_india" defaultChecked={prefs.allow_remote_india} /> Remote roles open to India
         </label>
         <label className="flex items-center gap-1 text-xs">
+          <input type="checkbox" name="allow_remote_anywhere" defaultChecked={prefs.allow_remote_anywhere} /> Remote roles anywhere (any region)
+        </label>
+        <label className="flex items-center gap-1 text-xs">
           <input type="checkbox" name="include_internships" defaultChecked={prefs.include_internships} /> Include internships
         </label>
       </div>

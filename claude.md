@@ -360,7 +360,7 @@ any -> archived (user, or closed_at set and not shortlisted)
 
 ## 6. Ingestion (`scripts/ingest.ts`, run by `.github/workflows/ingest.yml`)
 
-Schedule: daily at **00:00 UTC (05:30 IST)**, plus `workflow_dispatch`. Runs on Node 20+, connects with `DIRECT_DATABASE_URL` (session pooler) from GitHub secrets.
+Schedule: daily at **21:13 UTC (02:43 IST)** with a backup run at **22:43 UTC (04:13 IST)**, plus `workflow_dispatch`. GitHub cron is best effort (top-of-hour slots are delayed by hours or dropped), so off-peak minutes and a second idempotent run keep data fresh before Claude's 06:30 IST routine. Runs on Node 20+, connects with `DIRECT_DATABASE_URL` (session pooler) from GitHub secrets.
 
 Pipeline:
 1. Load companies where `watch_status = 'active'`, plus `low_freq` only on Sundays. Skip `paused`.
@@ -377,7 +377,9 @@ Pipeline:
    reappearing jobs get `closed_at` cleared. A board that returns 404 is set to `paused` and reported once.
 7. Pre-filter (`prefilter.ts`), driven by `preferences`:
    - Title matches role keywords (full stack, backend, frontend, software engineer, SDE, AI/ML engineer, etc.) and does not match exclusions (senior, staff, principal, lead, manager, director, intern unless enabled).
-   - Location: Hyderabad, India-wide, or remote eligible for India. Unknown location passes with reason `location_unknown`.
+   - Location: accepted cities (`preferences.locations`), India-wide, or remote. With `allow_remote_anywhere` (default on) any
+     remote role passes (reason `remote_any_region`, Claude checks whether the employer hires from India); otherwise only remote
+     roles open to India. Unknown location passes with reason `location_unknown`.
    - Experience (`exp-parse.ts`): parse "0-2 years", "1 to 3 yrs", "2+ years", "minimum 3 years", including en dash variants. Drop if `exp_min` exceeds the stretch band (see below). Unknown experience passes.
    - Store `prefilter_passed` and `prefilter_reason` for every job (we keep failed ones for stats).
      **Failed jobs are discarded, never stored** (MFK only wants relevant jobs); they are re-evaluated if seen

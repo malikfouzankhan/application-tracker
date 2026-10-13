@@ -83,7 +83,7 @@ Keep `BACKUP_PASSPHRASE` in a password manager: without it the backups cannot be
 
 ### Ingestion
 
-`.github/workflows/ingest.yml` runs daily at 05:30 IST from the default branch. It exits non-zero
+`.github/workflows/ingest.yml` runs daily at 02:43 IST, with a backup run at 04:13 IST, from the default branch. It exits non-zero
 (GitHub emails you) when a source fails; a board that returns 404 is paused automatically and
 reported once. Run history is on the Stats page.
 
