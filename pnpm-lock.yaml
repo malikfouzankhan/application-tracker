@@ -13,10 +13,10 @@ importers:
     dependencies:
       '@clerk/mcp-tools':
         specifier: 0.6.0
-        version: 0.6.0(@clerk/nextjs@7.9.12(next@16.4.0(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@22.20.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(express@5.2.1(supports-color@7.2.0))(hono@4.13.13)(next@16.4.0(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@22.20.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(supports-color@7.2.0)(zod@4.6.5)
+        version: 0.6.0(@clerk/nextjs@7.9.13(next@16.4.0(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@22.20.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(express@5.2.1(supports-color@7.2.0))(hono@4.13.13)(next@16.4.0(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@22.20.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(supports-color@7.2.0)(zod@4.6.5)
       '@clerk/nextjs':
-        specifier: ^7.9.12
-        version: 7.9.12(next@16.4.0(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@22.20.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        specifier: ^7.9.13
+        version: 7.9.13(next@16.4.0(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@22.20.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@modelcontextprotocol/server':
         specifier: 2.3.1
         version: 2.3.1
@@ -207,8 +207,8 @@ packages:
       redis:
         optional: true
 
-  '@clerk/nextjs@7.9.12':
-    resolution: {integrity: sha512-YOq2bqBNDmKfisavqgCFjX69CmjlNjMUdTMtwEDGXD4qJjwQaxp5q4fneQzKqI9LU5bnxTmmJPMh4KEaioOn+Q==}
+  '@clerk/nextjs@7.9.13':
+    resolution: {integrity: sha512-hzsQwqy3Rnr+nd1zGKQVJ8EAMRC6WHTkdoEe/1ArhSg0/3QVcQdLDC6V94rO8627u4lbgn2OgDkc6UPmYyaAag==}
     engines: {node: '>=20.9.0'}
     peerDependencies:
       next: ^15.2.8 || ^15.3.8 || ^15.4.10 || ^15.5.9 || ^15.6.0-0 || ^16.0.10 || ^16.1.0-0
@@ -4122,11 +4122,11 @@ snapshots:
       - react
       - react-dom
 
-  '@clerk/mcp-tools@0.6.0(@clerk/nextjs@7.9.12(next@16.4.0(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@22.20.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(express@5.2.1(supports-color@7.2.0))(hono@4.13.13)(next@16.4.0(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@22.20.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(supports-color@7.2.0)(zod@4.6.5)':
+  '@clerk/mcp-tools@0.6.0(@clerk/nextjs@7.9.13(next@16.4.0(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@22.20.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(express@5.2.1(supports-color@7.2.0))(hono@4.13.13)(next@16.4.0(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@22.20.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(supports-color@7.2.0)(zod@4.6.5)':
     dependencies:
       '@modelcontextprotocol/sdk': 1.32.1(supports-color@7.2.0)(zod@4.6.5)
     optionalDependencies:
-      '@clerk/nextjs': 7.9.12(next@16.4.0(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@22.20.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      '@clerk/nextjs': 7.9.13(next@16.4.0(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@22.20.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       express: 5.2.1(supports-color@7.2.0)
       hono: 4.13.13
       next: 16.4.0(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@22.20.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -4135,7 +4135,7 @@ snapshots:
       - supports-color
       - zod
 
-  '@clerk/nextjs@7.9.12(next@16.4.0(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@22.20.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
+  '@clerk/nextjs@7.9.13(next@16.4.0(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@22.20.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
     dependencies:
       '@clerk/backend': 3.23.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@clerk/react': 6.17.7(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
