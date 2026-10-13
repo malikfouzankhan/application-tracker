@@ -56,7 +56,7 @@ export function securityHeaders(options: { clerkHost: string | null; dev: boolea
     { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
     {
       key: "Permissions-Policy",
-      value: "camera=(), microphone=(), geolocation=(), payment=(), usb=(), bluetooth=(), serial=(), browsing-topics=()",
+      value: "camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), browsing-topics=()",
     },
   ];
 }

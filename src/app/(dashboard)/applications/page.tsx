@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { bulkApplicationsAction } from "@/actions/applications";
 import { ActionForm, SubmitButton } from "@/components/client/action-form";
 import { KanbanBoard } from "@/components/client/kanban";
+import { Select as SelectInput } from "@/components/client/select";
 import {
   Badge,
   Empty,
@@ -16,7 +17,6 @@ import {
   cx,
   inputClass,
   labelClass,
-  selectInline,
 } from "@/components/ui";
 import {
   appChannelValues,
@@ -36,7 +36,18 @@ export const metadata = { title: "Applications" };
 export default function ApplicationsPage({ searchParams }: PageProps<"/applications">) {
   return (
     <>
-      <PageHeader title="Applications" description="Every application across all statuses. Filters live in the URL, so any view can be bookmarked." />
+      <PageHeader
+        title="Applications"
+        description="Every application across all statuses. Filters live in the URL, so any view can be bookmarked."
+        actions={
+          <Link href="/applications/new" className={cx(btn.base, btn.primary)}>
+            <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
+              <path d="M10 4v12M4 10h12" strokeLinecap="round" />
+            </svg>
+            Add application
+          </Link>
+        }
+      />
       <Suspense fallback={<Loading />}>
         <ApplicationsContent searchParams={searchParams} />
       </Suspense>
@@ -76,11 +87,16 @@ async function ApplicationsContent({ searchParams }: { searchParams: PageProps<"
             <div className="overflow-hidden rounded-xl border border-border bg-surface shadow-card">
               <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3">
                 <span className="text-sm text-muted">With selected</span>
-                <select name="op" className={selectInline} aria-label="Bulk action">
-                  <option value="archive">Archive</option>
-                  <option value="unarchive">Unarchive</option>
-                  <option value="ghosted">Mark ghosted</option>
-                </select>
+                <SelectInput
+                  name="op"
+                  label="Bulk action"
+                  inline
+                  options={[
+                    { value: "archive", label: "Archive" },
+                    { value: "unarchive", label: "Unarchive" },
+                    { value: "ghosted", label: "Mark ghosted" },
+                  ]}
+                />
                 <SubmitButton className={cx(btn.base, btn.secondary)}>Apply</SubmitButton>
               </div>
               <div className="overflow-x-auto">
@@ -178,14 +194,7 @@ function Select({ name, value, options, label }: { name: string; value?: string;
   return (
     <label className={labelClass}>
       {label}
-      <select name={name} defaultValue={value ?? ""} className={inputClass}>
-        <option value="">Any</option>
-        {options.map((o) => (
-          <option key={o} value={o}>
-            {humanize(o)}
-          </option>
-        ))}
-      </select>
+      <SelectInput name={name} defaultValue={value} anyLabel="Any" options={options.map((o) => ({ value: o, label: humanize(o) }))} />
     </label>
   );
 }
@@ -215,13 +224,15 @@ function Toolbar({ filters: f, total }: { filters: ApplicationFilters; total: nu
         </label>
         <label className={labelClass}>
           Sort by
-          <select name="sort" defaultValue={f.sort} className={selectInline}>
-            {APPLICATION_SORTS.map((s) => (
-              <option key={s} value={s}>
-                {s === "activity" ? "Most recent activity" : s === "fit" ? "Fit score" : s === "company" ? "Company" : `${s[0].toUpperCase()}${s.slice(1)} date`}
-              </option>
-            ))}
-          </select>
+          <SelectInput
+            name="sort"
+            inline
+            defaultValue={f.sort}
+            options={APPLICATION_SORTS.map((s) => ({
+              value: s,
+              label: s === "activity" ? "Most recent activity" : s === "fit" ? "Fit score" : s === "company" ? "Company" : `${s[0].toUpperCase()}${s.slice(1)} date`,
+            }))}
+          />
         </label>
         <button type="submit" className={cx(btn.base, btn.primary)}>
           Apply

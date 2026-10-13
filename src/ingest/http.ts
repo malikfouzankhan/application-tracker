@@ -2,7 +2,7 @@
 // URL. Callers build URLs from (ats, board_token) and this module refuses any host outside
 // the allowlist, refuses redirects, and caps time and size.
 
-export const ALLOWED_HOSTS = new Set([
+const ALLOWED_HOSTS = new Set([
   "boards-api.greenhouse.io",
   "api.lever.co",
   "api.ashbyhq.com",

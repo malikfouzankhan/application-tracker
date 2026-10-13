@@ -15,7 +15,7 @@ export type PrefilterInput = {
 
 export type PrefilterResult = { passed: boolean; reason: string | null };
 
-export const DREAM_EXTRA_YEARS = 2;
+const DREAM_EXTRA_YEARS = 2;
 
 const REMOTE_NOISE = /\b(remote|work from home|wfh|full[\s-]?time|part[\s-]?time|contract|only|ok|friendly)\b/gi;
 const INDIA_FRIENDLY = /\b(india|indian|ist|asia|apac|anywhere|worldwide|global)\b/i;

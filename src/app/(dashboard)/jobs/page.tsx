@@ -2,12 +2,13 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { archiveJobAction, dismissJobAction } from "@/actions/misc";
 import { ActionForm, SubmitButton } from "@/components/client/action-form";
+import { Select } from "@/components/client/select";
 import { Badge, Empty, ExternalLink, Loading, PageHeader, RemoteBadge, ScamFlags, TierBadge, btn, cx, inputClass, labelClass } from "@/components/ui";
 import { jobSourceValues } from "@/db/enums";
 import { requireOwnerPage } from "@/lib/auth";
 import { type JobFilters, parseJobFilters, toQuery } from "@/lib/filters";
 import { fmtDate, humanize } from "@/lib/format";
-import { searchJobs } from "@/services/jobs";
+import { countJobsByTier, searchJobs } from "@/services/jobs";
 
 export const metadata = { title: "Jobs" };
 
@@ -30,34 +31,64 @@ const STAGE_TONE = { new: "blue", assessed: "gray", shortlisted: "green" } as co
 async function JobsContent({ searchParams }: { searchParams: PageProps<"/jobs">["searchParams"] }) {
   await requireOwnerPage();
   const f = parseJobFilters(await searchParams);
-  const { rows, total, pageSize } = await searchJobs(f);
+  const [{ rows, total, pageSize }, counts] = await Promise.all([searchJobs(f), countJobsByTier(f)]);
+  const tierChips: { value: JobFilters["tier"]; label: string; n: number }[] = [
+    { value: undefined, label: "All", n: counts.all },
+    { value: "fit", label: "Fit", n: counts.fit },
+    { value: "justify", label: "Justify", n: counts.justify },
+    { value: "stretch", label: "Stretch", n: counts.stretch },
+    { value: "unassessed", label: "Not assessed yet", n: counts.unassessed },
+  ];
 
   return (
     <div className="space-y-5">
-      <form method="get" action="/jobs" className="grid grid-cols-2 items-end gap-3 rounded-xl border border-border bg-surface p-4 shadow-card md:grid-cols-[2fr_1fr_1fr_1fr_auto]">
-        <label className={cx(labelClass, "col-span-2 md:col-span-1")}>
-          Search company or title
-          <input name="q" defaultValue={f.q} className={inputClass} />
-        </label>
-        <FilterSelect name="tier" value={f.tier} options={["fit", "justify", "stretch"]} label="Tier" />
-        <FilterSelect name="stage" value={f.stage} options={["new", "assessed", "shortlisted"]} label="Stage" />
-        <FilterSelect name="source" value={f.source} options={jobSourceValues} label="Source" />
-        <div className="col-span-2 flex gap-2 md:col-span-1">
-          <button type="submit" className={cx(btn.base, btn.primary)}>
-            Filter
-          </button>
-          <Link href="/jobs" className={cx(btn.base, btn.ghost)}>
-            Clear
-          </Link>
+      <div className="rounded-xl border border-border bg-surface p-4 shadow-card">
+        <div className="flex flex-wrap gap-2" role="tablist" aria-label="Tier">
+          {tierChips.map((chip) => {
+            const active = f.tier === chip.value;
+            return (
+              <Link
+                key={chip.label}
+                href={`/jobs${toQuery(f, { tier: chip.value, page: 1 })}`}
+                role="tab"
+                aria-selected={active}
+                className={cx(
+                  "flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors",
+                  active ? "border-navy bg-navy text-white" : "border-border text-navy hover:border-mist hover:bg-subtle",
+                )}
+              >
+                {chip.label}
+                <span className={cx("rounded-full px-1.5 text-xs tabular-nums", active ? "bg-white text-navy" : "bg-sky text-navy")}>{chip.n}</span>
+              </Link>
+            );
+          })}
         </div>
-      </form>
 
-      <p className="text-sm text-muted">
-        {total} relevant {total === 1 ? "job" : "jobs"}
-      </p>
+        <form method="get" action="/jobs" className="mt-4 grid grid-cols-2 items-end gap-3 border-t border-border pt-4 md:grid-cols-[2fr_1fr_1fr_auto]">
+          {f.tier ? <input type="hidden" name="tier" value={f.tier} /> : null}
+          <label className={cx(labelClass, "col-span-2 md:col-span-1")}>
+            Search company or title
+            <input name="q" defaultValue={f.q} placeholder="e.g. Supabase, backend" className={inputClass} />
+          </label>
+          <FilterSelect name="stage" value={f.stage} options={["new", "assessed", "shortlisted"]} label="Stage" />
+          <FilterSelect name="source" value={f.source} options={jobSourceValues} label="Source" />
+          <div className="col-span-2 flex gap-2 md:col-span-1">
+            <button type="submit" className={cx(btn.base, btn.primary)}>
+              Apply
+            </button>
+            <Link href="/jobs" className={cx(btn.base, btn.ghost)}>
+              Clear
+            </Link>
+          </div>
+        </form>
+      </div>
 
       {rows.length === 0 ? (
-        <Empty>No relevant jobs match. New ones arrive with the daily run at 05:30 IST.</Empty>
+        <Empty>
+          {f.tier && f.tier !== "unassessed"
+            ? `No ${f.tier} jobs yet. Tiers come from Claude's daily assessment; ${counts.unassessed} ${counts.unassessed === 1 ? "job is" : "jobs are"} still waiting to be assessed.`
+            : "No relevant jobs match. New ones arrive with the daily run at 05:30 IST."}
+        </Empty>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-border bg-surface shadow-card">
           <table className="w-full min-w-225 text-left text-sm">
@@ -124,14 +155,7 @@ function FilterSelect({ name, value, options, label }: { name: string; value?: s
   return (
     <label className={labelClass}>
       {label}
-      <select name={name} defaultValue={value ?? ""} className={inputClass}>
-        <option value="">Any</option>
-        {options.map((o) => (
-          <option key={o} value={o}>
-            {humanize(o)}
-          </option>
-        ))}
-      </select>
+      <Select name={name} defaultValue={value} anyLabel="Any" options={options.map((o) => ({ value: o, label: humanize(o) }))} />
     </label>
   );
 }

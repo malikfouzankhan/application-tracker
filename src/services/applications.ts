@@ -1,7 +1,8 @@
 import "server-only";
+import { randomUUID } from "node:crypto";
 import { type SQL, and, asc, count, desc, eq, gte, ilike, inArray, isNotNull, lt, lte, not, or, sql } from "drizzle-orm";
 import { type Tx, db } from "@/db/client";
-import type { appChannelValues } from "@/db/enums";
+import type { appChannelValues, archetypeValues, jobSourceValues, remoteTypeValues, tierValues } from "@/db/enums";
 import {
   applicationEvents,
   applications,
@@ -13,7 +14,11 @@ import {
   resumeVariants,
   screeningAnswers,
 } from "@/db/schema";
+import { extractBoardRefs } from "@/ingest/snowball";
+import { sanitizeExternalText, sanitizeLine } from "@/ingest/sanitize";
+import { detectScamFlags } from "@/ingest/scam";
 import { AppError } from "@/lib/errors";
+import { sha256Hex, urlHash } from "@/lib/hash";
 import { type ApplicationFilters, likePattern } from "@/lib/filters";
 import {
   APP_TRANSITIONS,
@@ -23,6 +28,7 @@ import {
   isValidJobStageTransition,
 } from "@/lib/state-machine";
 import { recordAudit } from "./audit";
+import { findCompanyForJob } from "./companies";
 import { type ServiceContext, requireUser } from "./context";
 
 type AppChannel = (typeof appChannelValues)[number];
@@ -403,35 +409,6 @@ export async function getApplicationFollowUpsDue(now: Date = new Date()) {
     .orderBy(asc(applications.nextActionAt));
 }
 
-/** /today shortlist: ready packs created today (IST), best fit first. */
-export async function getTodayShortlist(sinceUtc: Date) {
-  return db
-    .select({
-      application: applications,
-      job: {
-        id: jobs.id,
-        url: jobs.url,
-        title: jobs.title,
-        locationRaw: jobs.locationRaw,
-        remoteType: jobs.remoteType,
-        companyName: jobs.companyName,
-        scamFlags: jobs.scamFlags,
-      },
-      assessment: jobAssessments,
-    })
-    .from(applications)
-    .innerJoin(jobs, eq(jobs.id, applications.jobId))
-    .leftJoin(jobAssessments, eq(jobAssessments.jobId, applications.jobId))
-    .where(
-      and(
-        eq(applications.status, "ready"),
-        eq(applications.archived, false),
-        gte(applications.createdAt, sinceUtc),
-      ),
-    )
-    .orderBy(sql`${jobAssessments.fitScore} desc nulls last`);
-}
-
 // ---------------------------------------------------------------- Dashboard views
 
 const PAGE_SIZE = 50;
@@ -568,4 +545,131 @@ export async function getPackCards() {
     answers: answers.filter((x) => x.applicationId === a.application.id),
     outreach: drafts.filter((d) => d.outreach.jobId === a.job.id),
   }));
+}
+
+// ---------------------------------------------------------------- Manual applications
+
+export type ManualApplicationInput = {
+  companyName: string;
+  title: string;
+  /** Posting URL, if there is one (referrals often have none). */
+  url: string | null;
+  locationRaw: string | null;
+  remoteType: (typeof remoteTypeValues)[number];
+  source: (typeof jobSourceValues)[number];
+  expMin: number | null;
+  expMax: number | null;
+  description: string | null;
+  status: AppStatus;
+  channel: AppChannel | null;
+  appliedAt: Date | null;
+  nextAction: string | null;
+  nextActionAt: Date | null;
+  notes: string | null;
+  tier: (typeof tierValues)[number] | null;
+  fitScore: number | null;
+  archetype: (typeof archetypeValues)[number] | null;
+};
+
+const DEFAULT_FIT_SCORE = { fit: 80, justify: 65, stretch: 50, skip: 20 } as const;
+
+/**
+ * Dashboard "Add application": tracks an application MFK made outside the platform. The job is
+ * stored even if it would fail the prefilter (MFK chose to apply). A posting already known by URL
+ * is reused; a second application to the same job is refused.
+ */
+export async function createManualApplication(input: ManualApplicationInput, ctx: ServiceContext): Promise<{ applicationId: string }> {
+  requireUser(ctx);
+  let url: string;
+  let hash: string;
+  if (input.url) {
+    try {
+      hash = urlHash(input.url);
+      url = input.url.trim();
+    } catch {
+      throw new AppError("INVALID_INPUT", "Job URL must be a full http(s) link");
+    }
+  } else {
+    url = `manual:${randomUUID()}`;
+    hash = sha256Hex(url);
+  }
+
+  return db.transaction(async (tx) => {
+    const [existing] = await tx.select({ id: jobs.id }).from(jobs).where(eq(jobs.urlHash, hash));
+    let jobId: string;
+    if (existing) {
+      const [app] = await tx.select({ id: applications.id }).from(applications).where(eq(applications.jobId, existing.id));
+      if (app) throw new AppError("CONFLICT", "You already track an application for this job");
+      jobId = existing.id;
+      await tx.update(jobs).set({ stage: "shortlisted" }).where(eq(jobs.id, jobId));
+    } else {
+      const companyName = sanitizeLine(input.companyName, 200);
+      const description = sanitizeExternalText(input.description).text;
+      const company = await findCompanyForJob(tx, url.startsWith("http") ? extractBoardRefs(url) : [], companyName);
+      const [job] = await tx
+        .insert(jobs)
+        .values({
+          url,
+          urlHash: hash,
+          companyId: company?.id ?? null,
+          companyName,
+          title: sanitizeLine(input.title),
+          locationRaw: input.locationRaw ? sanitizeLine(input.locationRaw) : null,
+          remoteType: input.remoteType,
+          expMin: input.expMin,
+          expMax: input.expMax,
+          descriptionText: description,
+          source: input.source,
+          prefilterPassed: true,
+          prefilterReason: "added_manually",
+          scamFlags: detectScamFlags({ companyName, title: input.title, description }),
+          stage: "shortlisted",
+        })
+        .returning({ id: jobs.id });
+      jobId = job.id;
+    }
+
+    if (input.tier) {
+      await tx
+        .insert(jobAssessments)
+        .values({
+          jobId,
+          tier: input.tier,
+          fitScore: input.fitScore ?? DEFAULT_FIT_SCORE[input.tier],
+          archetype: input.archetype ?? "fullstack",
+          reasons: "Added manually by MFK.",
+          recommended: false,
+        })
+        .onConflictDoNothing({ target: jobAssessments.jobId });
+    }
+
+    const applied = input.status !== "ready";
+    const [app] = await tx
+      .insert(applications)
+      .values({
+        jobId,
+        status: input.status,
+        channel: input.channel,
+        appliedAt: applied ? (input.appliedAt ?? new Date()) : null,
+        nextAction: input.nextAction,
+        nextActionAt: input.nextActionAt,
+        notes: input.notes,
+      })
+      .returning({ id: applications.id });
+
+    await tx.insert(applicationEvents).values({
+      applicationId: app.id,
+      fromStatus: null,
+      toStatus: input.status,
+      actor: ctx.actor,
+      note: "Added manually",
+    });
+    await recordAudit(tx, ctx, {
+      action: "applications.createManual",
+      targetType: "application",
+      targetId: app.id,
+      diff: { status: input.status, source: input.source, hasUrl: Boolean(input.url), tier: input.tier },
+    });
+    return { applicationId: app.id };
+  });
 }

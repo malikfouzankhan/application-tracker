@@ -1,7 +1,8 @@
 import { Suspense } from "react";
 import { addCompanyAction, updateCompanyAction } from "@/actions/misc";
 import { ActionForm, SubmitButton } from "@/components/client/action-form";
-import { Badge, Card, Loading, PageHeader, btn, cx, inputClass } from "@/components/ui";
+import { Select } from "@/components/client/select";
+import { Badge, Card, Loading, PageHeader, btn, cx, inputClass, labelClass } from "@/components/ui";
 import { requireOwnerPage } from "@/lib/auth";
 import { fmtDate, fmtRelative } from "@/lib/format";
 import { listCompanies } from "@/services/companies";
@@ -30,17 +31,33 @@ async function CompaniesContent() {
   return (
     <div className="space-y-4">
       <Card>
-        <p className="mb-2 text-xs font-medium">Watch a company</p>
-        <ActionForm action={addCompanyAction} resetOnSuccess className="flex flex-wrap items-end gap-2">
-          <input name="name" placeholder="Company name" required className={cx(inputClass, "w-44 text-xs")} />
-          <select name="ats" className={cx(inputClass, "w-32 text-xs")} aria-label="ATS">
-            <option value="greenhouse">Greenhouse</option>
-            <option value="lever">Lever</option>
-            <option value="ashby">Ashby</option>
-          </select>
-          <input name="board_token" placeholder="board token, e.g. acme" required pattern="[a-z0-9-]{1,64}" className={cx(inputClass, "w-44 font-mono text-xs")} />
-          <input name="careers_url" placeholder="https://… (optional)" className={cx(inputClass, "w-56 text-xs")} />
-          <SubmitButton className={cx(btn.base, btn.primary)}>Add</SubmitButton>
+        <h2 className="mb-3 text-sm font-semibold text-navy">Watch a company</h2>
+        <ActionForm action={addCompanyAction} resetOnSuccess className="grid items-end gap-3 md:grid-cols-[minmax(0,1.3fr)_10rem_minmax(0,1fr)_minmax(0,1.3fr)_auto]">
+          <label className={labelClass}>
+            Company name
+            <input name="name" placeholder="e.g. Acme" required className={inputClass} />
+          </label>
+          <label className={labelClass}>
+            Board type
+            <Select
+              name="ats"
+              label="ATS"
+              options={[
+                { value: "greenhouse", label: "Greenhouse" },
+                { value: "lever", label: "Lever" },
+                { value: "ashby", label: "Ashby" },
+              ]}
+            />
+          </label>
+          <label className={labelClass}>
+            Board token
+            <input name="board_token" placeholder="acme" required pattern="[a-z0-9-]{1,64}" className={cx(inputClass, "font-mono")} />
+          </label>
+          <label className={labelClass}>
+            Careers page (optional)
+            <input name="careers_url" placeholder="https://..." className={inputClass} />
+          </label>
+          <SubmitButton className={cx(btn.base, btn.primary)}>Add company</SubmitButton>
         </ActionForm>
         <p className="mt-2 text-xs text-muted">The token is the slug in the board URL: boards.greenhouse.io/acme, jobs.lever.co/acme, jobs.ashbyhq.com/acme.</p>
       </Card>

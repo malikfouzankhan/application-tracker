@@ -28,7 +28,7 @@ const SERVER_INSTRUCTIONS =
   "Never put sensitive answer-bank values in drafts unless MFK asked. Resumes may only use " +
   "verified claims; rephrasing must not add facts. Nothing here sends anything or deletes data.";
 
-export const TOOLS: McpTool[] = [
+const TOOLS: McpTool[] = [
   ping,
   getBriefingTool,
   listCandidateJobsTool,

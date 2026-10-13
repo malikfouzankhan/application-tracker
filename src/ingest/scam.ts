@@ -1,13 +1,11 @@
 // Scam signals (claude.md section 6.8). Flags are stored and surfaced, never used to drop.
 
-export const scamFlagValues = [
-  "fee_request",
-  "freemail_recruiter",
-  "unrealistic_pay",
-  "missing_company",
-  "messaging_app_contact",
-] as const;
-export type ScamFlag = (typeof scamFlagValues)[number];
+export type ScamFlag =
+  | "fee_request"
+  | "freemail_recruiter"
+  | "unrealistic_pay"
+  | "missing_company"
+  | "messaging_app_contact";
 
 const FEE_REQUEST =
   /\b(registration|security|processing|training|joining|application|onboarding|refundable)\s+(fee|fees|deposit|charges?|amount)\b|\b(pay|deposit|transfer)\b[^.\n]{0,40}\b(fee|deposit|amount|rs\.?|inr|₹|\$)|\bfee\b[^.\n]{0,30}\b(to apply|for (the )?(interview|training|job|offer))/i;

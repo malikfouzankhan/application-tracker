@@ -7,7 +7,7 @@ import type { ResumeProfile } from "@/pdf/layout";
 import { recordAudit } from "./audit";
 import { type ServiceContext, requireUser } from "./context";
 
-export const MASKED_VALUE = "[masked]";
+const MASKED_VALUE = "[masked]";
 const KEY_RE = /^[a-z0-9_]{1,64}$/;
 
 /** get_answer_bank. Sensitive values are masked unless explicitly requested. */

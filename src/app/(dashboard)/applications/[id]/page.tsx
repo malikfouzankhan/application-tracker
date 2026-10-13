@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { changeStatusAction, saveNotesAction, updateAnswerAction } from "@/actions/applications";
 import { outreachStatusAction } from "@/actions/misc";
 import { ActionForm, SubmitButton } from "@/components/client/action-form";
+import { Select } from "@/components/client/select";
 import { CopyButton } from "@/components/client/copy-button";
 import {
   Badge,
@@ -75,7 +76,7 @@ async function ApplicationContent({ params }: { params: PageProps<"/applications
           {job.locationRaw ?? "Location not stated"} <RemoteBadge type={job.remoteType} /> · {humanize(job.source)} · seen{" "}
           {fmtDate(job.firstSeenAt)}
           {app.appliedAt ? ` · applied ${fmtDate(app.appliedAt)}${app.channel ? ` via ${humanize(app.channel)}` : ""}` : ""} ·{" "}
-          <ExternalLink href={job.url}>Job posting</ExternalLink>
+          {job.url.startsWith("http") ? <ExternalLink href={job.url}>Job posting</ExternalLink> : <span>No posting link</span>}
         </p>
       </div>
 
@@ -166,24 +167,23 @@ async function ApplicationContent({ params }: { params: PageProps<"/applications
           <Card>
             <SectionTitle>Change status</SectionTitle>
             <ActionForm action={changeStatusAction.bind(null, app.id)} className="space-y-2">
-              <select name="status" defaultValue={allowedNext[0] ?? ""} className={inputClass} aria-label="New status">
-                {appStatusValues
-                  .filter((s) => s !== app.status)
-                  .map((s) => (
-                    <option key={s} value={s}>
-                      {humanize(s)}
-                      {allowedNext.includes(s) ? "" : " (override)"}
-                    </option>
-                  ))}
-              </select>
-              <select name="channel" defaultValue="" className={inputClass} aria-label="Channel (when applied)">
-                <option value="">Channel (if applied)</option>
-                {appChannelValues.map((c) => (
-                  <option key={c} value={c}>
-                    {humanize(c)}
-                  </option>
-                ))}
-              </select>
+              <Select
+                name="status"
+                label="New status"
+                defaultValue={allowedNext[0]}
+                options={[
+                  ...allowedNext.map((s) => ({ value: s, label: humanize(s) })),
+                  ...appStatusValues
+                    .filter((s) => s !== app.status && !allowedNext.includes(s))
+                    .map((s) => ({ value: s, label: `${humanize(s)} (override)` })),
+                ]}
+              />
+              <Select
+                name="channel"
+                label="Applied via"
+                anyLabel="Applied via (if applied)"
+                options={appChannelValues.map((c) => ({ value: c, label: humanize(c) }))}
+              />
               <input name="note" placeholder="Note (optional)" maxLength={500} className={inputClass} />
               <input name="next_action" placeholder="Next action" defaultValue={app.nextAction ?? ""} maxLength={300} className={inputClass} />
               <label className="block text-xs text-muted">
